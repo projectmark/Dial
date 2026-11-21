@@ -160,6 +160,7 @@
   "KB.Article.Storage.Title": "Lokale Opslag & Single-Instance",
   "KB.Article.Storage.Summary": "Geïsoleerde instellingen in %AppData%\\Dial en bescherming tegen dubbele vensters.",
   "KB.Article.Storage.Body": "Favorieten, luisterstatistieken en voorkeuren worden atomisch opgeslagen onder %AppData%\\Dial\\. Een tweede start brengt automatisch het actieve venster naar voren.",
+  "Changelog.v027.TrueStickyEditToolbar": "Spelerkaart scrolt nu natuurlijk uit beeld terwijl de bewerkbalk bovenaan blijft plakken (sticky) bij lange lijsten.",
   "Changelog.v026.StickyEditToolbar": "Bewerkbalk en spelerkop blijven vast bovenaan staan tijdens het scrollen door lange favorietenlijsten.",
   "Changelog.v025.MovedEditButton": "Bewerkknop en bewerkbalk verplaatst naar de kop van Favorieten voor een duidelijkere scheiding met de speleracties.",
   "Changelog.v024.AddedBulkSelectionAndDrag": "Selectievakjes, Shift+klik bereikselectie, bulk verwijderen en multi-select drag-and-drop herordening toegevoegd aan de bewerkmodus.",

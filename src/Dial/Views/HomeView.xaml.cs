@@ -12,8 +12,10 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.ApplicationModel.DataTransfer;
+using Windows.Foundation;
 using Windows.Storage.Pickers;
 using Windows.System;
+using Windows.UI;
 using Windows.UI.Core;
 using WinRT.Interop;
 
@@ -774,10 +776,13 @@ public sealed partial class HomeView : UserControl
 
         HeroCard.Background = _theme.GetCardBackgroundBrush();
         HeroCard.BorderBrush = _theme.GetCardBorderBrush();
-        EditToolbar.Background = _theme.GetCardBackgroundBrush();
+        EditToolbar.Background = new SolidColorBrush(_theme.IsDarkTheme
+            ? Color.FromArgb(0xF2, 0x24, 0x24, 0x24)
+            : Color.FromArgb(0xF5, 0xF7, 0xF8, 0xFA));
         EditToolbar.BorderBrush = _theme.GetCardBorderBrush();
         EditToolbar.Visibility = _isEditMode ? Visibility.Visible : Visibility.Collapsed;
         StationsHeading.Foreground = primary;
+        UpdateStickyEditToolbar();
 
         var station = snapshot.ActiveStation;
         var isLiveOrBuffering = snapshot.State is RadioPlaybackState.Playing or RadioPlaybackState.Buffering;
@@ -1206,6 +1211,36 @@ public sealed partial class HomeView : UserControl
         }
 
         _player.SetVolume(e.NewValue / 100.0);
+    }
+
+    private void HomeScrollViewer_ViewChanged(object sender, ScrollViewerViewChangedEventArgs e)
+        => UpdateStickyEditToolbar();
+
+    private void StickyLayoutAnchor_SizeChanged(object sender, SizeChangedEventArgs e)
+        => UpdateStickyEditToolbar();
+
+    private void UpdateStickyEditToolbar()
+    {
+        if (!_isEditMode || EditToolbar.Visibility != Visibility.Visible || HomeScrollViewer.Content is not UIElement scrollContent)
+        {
+            StickyEditTransform.Y = 0;
+            return;
+        }
+
+        try
+        {
+            var anchorTop = EditToolbarAnchor
+                .TransformToVisual(scrollContent)
+                .TransformPoint(new Point(0, 0))
+                .Y;
+            var stickyThreshold = Math.Max(0.0, anchorTop - 12.0);
+            var offset = HomeScrollViewer.VerticalOffset;
+            StickyEditTransform.Y = offset > stickyThreshold ? offset - stickyThreshold : 0.0;
+        }
+        catch
+        {
+            StickyEditTransform.Y = 0;
+        }
     }
 
     private void EditModeBtn_Click(object sender, RoutedEventArgs e)
