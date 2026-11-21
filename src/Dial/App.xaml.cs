@@ -246,11 +246,20 @@ public sealed partial class App : Application
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
+                new ChangelogChange("Added", "Changelog.v031.CustomizableHotkeys")
+            },
+            IsLatest: true));
+
+        changelog.RegisterRelease(new ChangelogRelease(
+            Version: "0.3.0",
+            ReleaseDate: new DateTime(2026, 11, 21),
+            Changes: new ChangelogChange[]
+            {
                 new ChangelogChange("Changed", "Changelog.v030.RefactorZeroHardcoding"),
                 new ChangelogChange("Fixed", "Changelog.v030.SettingsAlignmentAndColorPicker"),
                 new ChangelogChange("Added", "Changelog.v030.DocumentationReadme")
             },
-            IsLatest: true));
+            IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
             Version: "0.2.9",

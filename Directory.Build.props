@@ -4,7 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
 
-    <Version Condition="'$(Version)' == ''">0.3.0</Version>
+    <Version Condition="'$(Version)' == ''">0.3.1</Version>
     <InformationalVersion Condition="'$(InformationalVersion)' == ''">$(Version)</InformationalVersion>
     <WindowsAppSDKVersion Condition="'$(WindowsAppSDKVersion)' == ''">1.6.250205002</WindowsAppSDKVersion>
     <WindowsSDKBuildToolsVersion Condition="'$(WindowsSDKBuildToolsVersion)' == ''">10.0.26100.1742</WindowsSDKBuildToolsVersion>

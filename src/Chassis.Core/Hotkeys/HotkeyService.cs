@@ -42,6 +42,12 @@ public sealed partial class HotkeyService : IHotkeyService
 {
     private const uint WmHotkey = 0x0312;
 
+    public static IReadOnlyList<uint> SelectableVirtualKeys { get; } =
+        Enumerable.Range(0x41, 26).Select(static c => (uint)c)
+            .Concat(Enumerable.Range(0x30, 10).Select(static d => (uint)d))
+            .Append(0x20u)
+            .ToArray();
+
     private readonly Win32MessageHost _messageHost;
     private readonly ConcurrentDictionary<string, HotkeyBinding> _bindings = new(StringComparer.OrdinalIgnoreCase);
     private readonly Guid _handlerId;
@@ -63,6 +69,26 @@ public sealed partial class HotkeyService : IHotkeyService
         if (modifiers.HasFlag(HotkeyModifiers.Win)) parts.Add("Win");
         parts.Add(FormatVirtualKey(virtualKey));
         return string.Join("+", parts);
+    }
+
+    public static string FormatKeyName(uint virtualKey) => FormatVirtualKey(virtualKey);
+
+    public static bool TryFormatNormalizedHotkey(
+        HotkeyModifiers modifiers,
+        uint virtualKey,
+        bool requireModifier,
+        out string normalized)
+    {
+        var masked = modifiers & (HotkeyModifiers.Control | HotkeyModifiers.Alt | HotkeyModifiers.Shift | HotkeyModifiers.Win);
+        if (virtualKey == 0 ||
+            (requireModifier && (masked & (HotkeyModifiers.Control | HotkeyModifiers.Alt | HotkeyModifiers.Shift)) == 0))
+        {
+            normalized = string.Empty;
+            return false;
+        }
+
+        normalized = FormatDisplayText(masked, virtualKey);
+        return true;
     }
 
     public static bool TryParseHotkeyString(string? input, out HotkeyModifiers modifiers, out uint virtualKey)
@@ -96,7 +122,7 @@ public sealed partial class HotkeyService : IHotkeyService
                     virtualKey = 0x20;
                     break;
                 default:
-                    if (token.Length == 1 && char.IsLetterOrDigit(token[0]))
+                    if (token.Length == 1 && token[0] is (>= 'A' and <= 'Z') or (>= 'a' and <= 'z') or (>= '0' and <= '9'))
                     {
                         virtualKey = char.ToUpperInvariant(token[0]);
                     }

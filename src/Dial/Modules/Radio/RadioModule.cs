@@ -8,10 +8,14 @@ using Chassis.UI.Controls;
 using Chassis.UI.Navigation;
 using Chassis.UI.Theme;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.UI.Input;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
+using Windows.System;
+using Windows.UI.Core;
 
 namespace Dial.Modules.Radio;
 
@@ -27,12 +31,6 @@ public sealed class RadioModule : IChassisModule
     public const string AlignmentOptionKey = RadioOptions.ListAlignment;
     public const string FontSizeOptionKey = RadioOptions.ListFontSize;
     public const string MiniAlwaysOnTopOptionKey = RadioOptions.MiniAlwaysOnTop;
-
-    private const string HotkeyPlayPauseId = "dial.play_pause";
-    private const string HotkeyNextId = "dial.next";
-    private const string HotkeyPrevId = "dial.prev";
-    private const string HotkeyMuteId = "dial.mute";
-    private const string HotkeyToggleWindowId = "dial.toggle_window";
 
     public string ModuleId => "dial.radio";
 
@@ -105,43 +103,56 @@ public sealed class RadioModule : IChassisModule
             tray.SetCustomMenuItems(items);
         }
 
-        var lastHotkeysEnabled = false;
-        string? lastToggleHotkey = null;
+        var hotkeyCallbacks = new Dictionary<string, Action>(StringComparer.OrdinalIgnoreCase)
+        {
+            [RadioHotkeyDefaults.PlayPauseId] = () => _ = player.TogglePlayPauseAsync(),
+            [RadioHotkeyDefaults.NextId] = () => _ = player.NextStationAsync(),
+            [RadioHotkeyDefaults.PrevId] = () => _ = player.PreviousStationAsync(),
+            [RadioHotkeyDefaults.MuteId] = player.ToggleMute,
+            [RadioHotkeyDefaults.ToggleWindowId] = () =>
+                MainWindow.Instance?.DispatcherQueue.TryEnqueue(() => MainWindow.Instance?.ToggleVisibilityFromHotkey())
+        };
+
+        var lastHotkeysSnapshot = string.Empty;
 
         void SyncGlobalHotkeys(bool force = false)
         {
             var enabled = settings.Current.GlobalHotkeysEnabled;
-            var toggleHotkey = settings.Current.ToggleWindowHotkey;
-            if (!force && enabled == lastHotkeysEnabled && string.Equals(toggleHotkey, lastToggleHotkey, StringComparison.OrdinalIgnoreCase))
+            var configuredPairs = RadioHotkeyCatalog.Actions
+                .Select(spec => (Spec: spec, Chord: RadioHotkeyCatalog.GetConfiguredChord(settings, spec)))
+                .ToList();
+
+            var snapshotKey = $"{enabled}|{string.Join("|", configuredPairs.Select(p => $"{p.Spec.Id}={p.Chord}"))}";
+            if (!force && string.Equals(snapshotKey, lastHotkeysSnapshot, StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
 
-            lastHotkeysEnabled = enabled;
-            lastToggleHotkey = toggleHotkey;
+            lastHotkeysSnapshot = snapshotKey;
 
-            hotkeys.Unregister(HotkeyPlayPauseId);
-            hotkeys.Unregister(HotkeyNextId);
-            hotkeys.Unregister(HotkeyPrevId);
-            hotkeys.Unregister(HotkeyMuteId);
-            hotkeys.Unregister(HotkeyToggleWindowId);
+            foreach (var spec in RadioHotkeyCatalog.Actions)
+            {
+                hotkeys.Unregister(spec.Id);
+            }
 
             if (!enabled)
             {
                 return;
             }
 
-            hotkeys.Register(HotkeyPlayPauseId, HotkeyModifiers.Control | HotkeyModifiers.Alt, 'P', () => _ = player.TogglePlayPauseAsync());
-            hotkeys.Register(HotkeyNextId, HotkeyModifiers.Control | HotkeyModifiers.Alt, 'N', () => _ = player.NextStationAsync());
-            hotkeys.Register(HotkeyPrevId, HotkeyModifiers.Control | HotkeyModifiers.Alt, 'B', () => _ = player.PreviousStationAsync());
-            hotkeys.Register(HotkeyMuteId, HotkeyModifiers.Control | HotkeyModifiers.Alt, 'M', player.ToggleMute);
-
-            if (HotkeyService.TryParseHotkeyString(toggleHotkey, out var mods, out var vk))
+            var claimedChords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (spec, chord) in configuredPairs)
             {
-                hotkeys.Register(HotkeyToggleWindowId, mods, vk, () =>
+                if (!claimedChords.Add(chord))
                 {
-                    MainWindow.Instance?.DispatcherQueue.TryEnqueue(() => MainWindow.Instance?.ToggleVisibilityFromHotkey());
-                });
+                    continue;
+                }
+
+                if (HotkeyService.TryParseHotkeyString(chord, out var mods, out var vk) &&
+                    hotkeyCallbacks.TryGetValue(spec.Id, out var callback))
+                {
+                    hotkeys.Register(spec.Id, mods, vk, callback);
+                }
             }
         }
 
@@ -192,9 +203,24 @@ public sealed class RadioModule : IChassisModule
         }
     }
 
+    private sealed class HotkeyRowVisual
+    {
+        public required RadioHotkeySpec Spec { get; init; }
+        public required SettingsCard Card { get; init; }
+        public required StackPanel ControlsPanel { get; init; }
+        public required Button CtrlBtn { get; init; }
+        public required Button AltBtn { get; init; }
+        public required Button ShiftBtn { get; init; }
+        public required ComboBox KeyCombo { get; init; }
+        public required Button RecordBtn { get; init; }
+        public HotkeyModifiers CurrentModifiers { get; set; }
+        public uint CurrentVirtualKey { get; set; }
+    }
+
     private sealed class RadioSettingsCategoryProvider(
         ISettingsService settings,
         ILocalizationService localization,
+        IHotkeyService hotkeys,
         ThemeManager theme) : ISettingsCategoryProvider
     {
         public IEnumerable<SettingsCategoryDescriptor> GetCategories()
@@ -202,13 +228,14 @@ public sealed class RadioModule : IChassisModule
             yield return new SettingsCategoryDescriptor(
                 Id: "radio",
                 TitleLocalizationKey: "Radio.Settings.Category",
-                SectionFactory: () => BuildSettingsSection(settings, localization, theme),
+                SectionFactory: () => BuildSettingsSection(settings, localization, hotkeys, theme),
                 Order: 25);
         }
 
         private static UIElement BuildSettingsSection(
             ISettingsService settings,
             ILocalizationService localization,
+            IHotkeyService hotkeys,
             ThemeManager theme)
         {
             var heading = new TextBlock
@@ -275,6 +302,296 @@ public sealed class RadioModule : IChassisModule
             var hotkeysToggle = CreateAlignedToggle();
             var hotkeysCard = new SettingsCard { Glyph = "\uE765", ActionContent = hotkeysToggle };
 
+            var hotkeysSubheading = new TextBlock
+            {
+                FontSize = 13,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            var resetHotkeysBtn = new Button
+            {
+                Height = 30,
+                Padding = new Thickness(12, 4, 12, 4),
+                CornerRadius = new CornerRadius(6)
+            };
+            theme.BindInteractiveButton(resetHotkeysBtn, () => false);
+
+            var hotkeysHeaderRow = new Grid { Margin = new Thickness(0, 6, 0, 0) };
+            hotkeysHeaderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            hotkeysHeaderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            Grid.SetColumn(hotkeysSubheading, 0);
+            Grid.SetColumn(resetHotkeysBtn, 1);
+            hotkeysHeaderRow.Children.Add(hotkeysSubheading);
+            hotkeysHeaderRow.Children.Add(resetHotkeysBtn);
+
+            var hotkeyRows = new List<HotkeyRowVisual>();
+            RadioHotkeySpec? recordingSpec = null;
+
+            void SyncHotkeyRowStates()
+            {
+                isSyncing = true;
+                var hotkeysEnabled = settings.Current.GlobalHotkeysEnabled;
+                var activeBindings = hotkeys.GetActiveBindings();
+
+                // Map chord -> list of action titles to detect in-app duplicates cleanly.
+                var configuredBySpec = RadioHotkeyCatalog.Actions.ToDictionary(
+                    s => s.Id,
+                    s => RadioHotkeyCatalog.GetConfiguredChord(settings, s),
+                    StringComparer.OrdinalIgnoreCase);
+
+                foreach (var row in hotkeyRows)
+                {
+                    var chord = configuredBySpec[row.Spec.Id];
+                    if (HotkeyService.TryParseHotkeyString(chord, out var mods, out var vk))
+                    {
+                        row.CurrentModifiers = mods;
+                        row.CurrentVirtualKey = vk;
+                    }
+                    else
+                    {
+                        row.CurrentModifiers = HotkeyModifiers.Control | HotkeyModifiers.Alt;
+                        row.CurrentVirtualKey = 'P';
+                    }
+
+                    row.Card.IsDimmed = !hotkeysEnabled;
+                    row.ControlsPanel.Opacity = hotkeysEnabled ? 1.0 : 0.42;
+                    row.CtrlBtn.IsEnabled = hotkeysEnabled;
+                    row.AltBtn.IsEnabled = hotkeysEnabled;
+                    row.ShiftBtn.IsEnabled = hotkeysEnabled;
+                    row.KeyCombo.IsEnabled = hotkeysEnabled;
+                    row.RecordBtn.IsEnabled = hotkeysEnabled;
+
+                    var targetIdx = -1;
+                    for (var i = 0; i < HotkeyService.SelectableVirtualKeys.Count; i++)
+                    {
+                        if (HotkeyService.SelectableVirtualKeys[i] == row.CurrentVirtualKey)
+                        {
+                            targetIdx = i;
+                            break;
+                        }
+                    }
+
+                    row.KeyCombo.SelectedIndex = targetIdx;
+
+                    var isRecordingThis = hotkeysEnabled && recordingSpec?.Id == row.Spec.Id;
+                    var duplicateWith = hotkeyRows.FirstOrDefault(other =>
+                        other.Spec.Id != row.Spec.Id &&
+                        string.Equals(configuredBySpec[other.Spec.Id], chord, StringComparison.OrdinalIgnoreCase));
+
+                    if (!hotkeysEnabled)
+                    {
+                        row.Card.Description = localization.GetString("Radio.Settings.Hotkey.DisabledDesc", chord);
+                    }
+                    else if (isRecordingThis)
+                    {
+                        row.Card.Description = localization["Radio.Settings.Hotkey.RecordingHint"];
+                    }
+                    else if (duplicateWith is not null)
+                    {
+                        row.Card.Description = localization.GetString(
+                            "Radio.Settings.Hotkey.ConflictDesc",
+                            localization[duplicateWith.Spec.TitleLocalizationKey],
+                            chord);
+                    }
+                    else if (!activeBindings.ContainsKey(row.Spec.Id))
+                    {
+                        row.Card.Description = localization.GetString("Radio.Settings.Hotkey.UnavailableDesc", chord);
+                    }
+                    else
+                    {
+                        row.Card.Description = localization.GetString("Radio.Settings.Hotkey.ActiveDesc", chord);
+                    }
+
+                    theme.RefreshInteractiveButton(row.CtrlBtn);
+                    theme.RefreshInteractiveButton(row.AltBtn);
+                    theme.RefreshInteractiveButton(row.ShiftBtn);
+                    theme.RefreshInteractiveButton(row.RecordBtn);
+                }
+
+                resetHotkeysBtn.IsEnabled = !RadioHotkeyCatalog.AreAllDefaults(settings);
+                theme.RefreshInteractiveButton(resetHotkeysBtn);
+                isSyncing = false;
+            }
+
+            void CommitRowChord(HotkeyRowVisual row, HotkeyModifiers mods, uint vk)
+            {
+                if (HotkeyService.TryFormatNormalizedHotkey(mods, vk, requireModifier: true, out var normalized))
+                {
+                    RadioHotkeyCatalog.SetConfiguredChord(settings, row.Spec, normalized);
+                    SyncHotkeyRowStates();
+                }
+            }
+
+            static Button CreateModifierButton(string text) => new()
+            {
+                Height = 32,
+                MinWidth = 44,
+                Padding = new Thickness(9, 4, 9, 4),
+                CornerRadius = new CornerRadius(6),
+                Content = text,
+                FontSize = 12
+            };
+
+            foreach (var spec in RadioHotkeyCatalog.Actions)
+            {
+                HotkeyRowVisual? row = null;
+
+                var ctrlBtn = CreateModifierButton("Ctrl");
+                var altBtn = CreateModifierButton("Alt");
+                var shiftBtn = CreateModifierButton("Shift");
+
+                var keyCombo = new ComboBox { Width = 92 };
+                foreach (var vk in HotkeyService.SelectableVirtualKeys)
+                {
+                    keyCombo.Items.Add(new ComboBoxItem
+                    {
+                        Tag = vk,
+                        Content = HotkeyService.FormatKeyName(vk)
+                    });
+                }
+
+                var recordBtn = new Button
+                {
+                    Width = 34,
+                    Height = 32,
+                    Padding = new Thickness(0),
+                    CornerRadius = new CornerRadius(6),
+                    Content = new FontIcon
+                    {
+                        FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe Fluent Icons"),
+                        Glyph = "\uE765",
+                        FontSize = 13
+                    }
+                };
+
+                var controlsPanel = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 6,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                controlsPanel.Children.Add(ctrlBtn);
+                controlsPanel.Children.Add(altBtn);
+                controlsPanel.Children.Add(shiftBtn);
+                controlsPanel.Children.Add(keyCombo);
+                controlsPanel.Children.Add(recordBtn);
+
+                var card = new SettingsCard
+                {
+                    Glyph = spec.Glyph,
+                    ActionContent = controlsPanel
+                };
+
+                row = new HotkeyRowVisual
+                {
+                    Spec = spec,
+                    Card = card,
+                    ControlsPanel = controlsPanel,
+                    CtrlBtn = ctrlBtn,
+                    AltBtn = altBtn,
+                    ShiftBtn = shiftBtn,
+                    KeyCombo = keyCombo,
+                    RecordBtn = recordBtn
+                };
+
+                theme.BindInteractiveButton(ctrlBtn, () => row.CurrentModifiers.HasFlag(HotkeyModifiers.Control));
+                theme.BindInteractiveButton(altBtn, () => row.CurrentModifiers.HasFlag(HotkeyModifiers.Alt));
+                theme.BindInteractiveButton(shiftBtn, () => row.CurrentModifiers.HasFlag(HotkeyModifiers.Shift));
+                theme.BindInteractiveButton(recordBtn, () => recordingSpec?.Id == row.Spec.Id);
+
+                void ToggleModifier(HotkeyModifiers flag)
+                {
+                    var nextMods = row.CurrentModifiers ^ flag;
+                    if ((nextMods & (HotkeyModifiers.Control | HotkeyModifiers.Alt | HotkeyModifiers.Shift)) == 0)
+                    {
+                        return;
+                    }
+
+                    recordingSpec = null;
+                    CommitRowChord(row, nextMods, row.CurrentVirtualKey);
+                }
+
+                ctrlBtn.Click += (_, _) => ToggleModifier(HotkeyModifiers.Control);
+                altBtn.Click += (_, _) => ToggleModifier(HotkeyModifiers.Alt);
+                shiftBtn.Click += (_, _) => ToggleModifier(HotkeyModifiers.Shift);
+
+                keyCombo.SelectionChanged += (_, _) =>
+                {
+                    if (isSyncing)
+                    {
+                        return;
+                    }
+
+                    if (keyCombo.SelectedItem is ComboBoxItem item && item.Tag is uint selectedVk)
+                    {
+                        recordingSpec = null;
+                        CommitRowChord(row, row.CurrentModifiers, selectedVk);
+                    }
+                };
+
+                recordBtn.Click += (_, _) =>
+                {
+                    recordingSpec = recordingSpec?.Id == row.Spec.Id ? null : row.Spec;
+                    SyncHotkeyRowStates();
+                    if (recordingSpec is not null)
+                    {
+                        recordBtn.Focus(FocusState.Programmatic);
+                    }
+                };
+
+                recordBtn.LostFocus += (_, _) =>
+                {
+                    if (recordingSpec?.Id == row.Spec.Id)
+                    {
+                        recordingSpec = null;
+                        SyncHotkeyRowStates();
+                    }
+                };
+
+                recordBtn.PreviewKeyDown += (_, e) =>
+                {
+                    if (recordingSpec?.Id != row.Spec.Id)
+                    {
+                        return;
+                    }
+
+                    if (e.Key == VirtualKey.Escape)
+                    {
+                        e.Handled = true;
+                        recordingSpec = null;
+                        SyncHotkeyRowStates();
+                        return;
+                    }
+
+                    var capturedVk = MapCapturedVirtualKey(e.Key);
+                    if (capturedVk == 0)
+                    {
+                        e.Handled = true;
+                        return;
+                    }
+
+                    var capturedMods = ReadCurrentModifiers();
+                    if (capturedMods == HotkeyModifiers.None)
+                    {
+                        e.Handled = true;
+                        return;
+                    }
+
+                    e.Handled = true;
+                    recordingSpec = null;
+                    CommitRowChord(row, capturedMods, capturedVk);
+                };
+
+                hotkeyRows.Add(row);
+            }
+
+            resetHotkeysBtn.Click += (_, _) =>
+            {
+                recordingSpec = null;
+                RadioHotkeyCatalog.ResetAllToDefaults(settings);
+                SyncHotkeyRowStates();
+            };
+
             void SyncFromSettings()
             {
                 isSyncing = true;
@@ -312,6 +629,8 @@ public sealed class RadioModule : IChassisModule
                     _ => 1
                 };
                 isSyncing = false;
+
+                SyncHotkeyRowStates();
             }
 
             autoplayToggle.Toggled += (_, _) =>
@@ -331,7 +650,12 @@ public sealed class RadioModule : IChassisModule
             };
             hotkeysToggle.Toggled += (_, _) =>
             {
-                if (!isSyncing) settings.Update(s => s.GlobalHotkeysEnabled = hotkeysToggle.IsOn);
+                if (!isSyncing)
+                {
+                    recordingSpec = null;
+                    settings.Update(s => s.GlobalHotkeysEnabled = hotkeysToggle.IsOn);
+                    SyncHotkeyRowStates();
+                }
             };
             viewModeCombo.SelectionChanged += (_, _) =>
             {
@@ -400,10 +724,36 @@ public sealed class RadioModule : IChassisModule
                 hotkeysCard.Title = localization["Radio.Settings.Hotkeys.Title"];
                 hotkeysCard.Description = localization["Radio.Settings.Hotkeys.Desc"];
                 AutomationProperties.SetName(hotkeysToggle, localization["Radio.Settings.Hotkeys.Title"]);
+
+                hotkeysSubheading.Text = localization["Radio.Settings.Hotkeys.CustomizeHeading"];
+                resetHotkeysBtn.Content = localization["Radio.Settings.Hotkeys.ResetDefaults"];
+                AutomationProperties.SetName(resetHotkeysBtn, localization["Radio.Settings.Hotkeys.ResetDefaults"]);
+
+                foreach (var row in hotkeyRows)
+                {
+                    var actionTitle = localization[row.Spec.TitleLocalizationKey];
+                    row.Card.Title = actionTitle;
+                    AutomationProperties.SetName(row.CtrlBtn, $"{actionTitle} Ctrl");
+                    AutomationProperties.SetName(row.AltBtn, $"{actionTitle} Alt");
+                    AutomationProperties.SetName(row.ShiftBtn, $"{actionTitle} Shift");
+                    AutomationProperties.SetName(row.KeyCombo, $"{actionTitle} {localization["Radio.Settings.Hotkey.KeyLabel"]}");
+                    AutomationProperties.SetName(row.RecordBtn, localization["Radio.Settings.Hotkey.RecordTooltip"]);
+                    ToolTipService.SetToolTip(row.RecordBtn, localization["Radio.Settings.Hotkey.RecordTooltip"]);
+                }
+
                 isSyncing = false;
+                SyncHotkeyRowStates();
             }
 
-            void RefreshTheme() => heading.Foreground = theme.GetTextPrimaryBrush();
+            void RefreshTheme()
+            {
+                var primary = theme.GetTextPrimaryBrush();
+                var secondary = theme.GetTextSecondaryBrush();
+                heading.Foreground = primary;
+                hotkeysSubheading.Foreground = secondary;
+                SyncHotkeyRowStates();
+            }
+
             void OnLanguageChanged(string _) => RefreshText();
 
             var panel = new StackPanel { Spacing = 10 };
@@ -415,6 +765,11 @@ public sealed class RadioModule : IChassisModule
             panel.Children.Add(alignCard);
             panel.Children.Add(sizeCard);
             panel.Children.Add(hotkeysCard);
+            panel.Children.Add(hotkeysHeaderRow);
+            foreach (var row in hotkeyRows)
+            {
+                panel.Children.Add(row.Card);
+            }
 
             SyncFromSettings();
             RefreshText();
@@ -433,9 +788,31 @@ public sealed class RadioModule : IChassisModule
             {
                 theme.ThemeChanged -= RefreshTheme;
                 localization.LanguageChanged -= OnLanguageChanged;
+                recordingSpec = null;
             };
 
             return panel;
         }
+
+        private static HotkeyModifiers ReadCurrentModifiers()
+        {
+            var mods = HotkeyModifiers.None;
+            if (IsKeyDown(VirtualKey.Control)) mods |= HotkeyModifiers.Control;
+            if (IsKeyDown(VirtualKey.Menu)) mods |= HotkeyModifiers.Alt;
+            if (IsKeyDown(VirtualKey.Shift)) mods |= HotkeyModifiers.Shift;
+            return mods;
+        }
+
+        private static bool IsKeyDown(VirtualKey key)
+            => InputKeyboardSource.GetKeyStateForCurrentThread(key).HasFlag(CoreVirtualKeyStates.Down);
+
+        private static uint MapCapturedVirtualKey(VirtualKey key) => key switch
+        {
+            >= VirtualKey.A and <= VirtualKey.Z => (uint)key,
+            >= VirtualKey.Number0 and <= VirtualKey.Number9 => (uint)key,
+            >= VirtualKey.NumberPad0 and <= VirtualKey.NumberPad9 => (uint)('0' + (key - VirtualKey.NumberPad0)),
+            VirtualKey.Space => 0x20u,
+            _ => 0u
+        };
     }
 }

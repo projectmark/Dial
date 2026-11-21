@@ -1,5 +1,8 @@
 namespace Dial.Modules.Radio;
 
+using Chassis.Core.Hotkeys;
+using Chassis.Core.Settings;
+
 /// <summary>
 /// Centralized module option keys stored inside <c>AppSettings.ModuleOptions</c>.
 /// </summary>
@@ -16,6 +19,110 @@ public static class RadioOptions
     public const string ListFontSize = "radio.list_font_size";
     public const string MiniAlwaysOnTop = "radio.mini_always_on_top";
     public const string MinimizeToTray = "radio.minimize_to_tray";
+    public const string HotkeyPlayPause = "radio.hotkey.play_pause";
+    public const string HotkeyNextStation = "radio.hotkey.next";
+    public const string HotkeyPreviousStation = "radio.hotkey.prev";
+    public const string HotkeyMute = "radio.hotkey.mute";
+}
+
+/// <summary>
+/// Canonical hotkey identifiers and default key chords for the Dial radio module.
+/// </summary>
+public static class RadioHotkeyDefaults
+{
+    public const string PlayPauseId = "dial.play_pause";
+    public const string NextId = "dial.next";
+    public const string PrevId = "dial.prev";
+    public const string MuteId = "dial.mute";
+    public const string ToggleWindowId = "dial.toggle_window";
+
+    public const string PlayPause = "Ctrl+Alt+P";
+    public const string Next = "Ctrl+Alt+N";
+    public const string Prev = "Ctrl+Alt+B";
+    public const string Mute = "Ctrl+Alt+M";
+    public const string ToggleWindow = "Ctrl+Shift+Space";
+}
+
+/// <summary>
+/// Declarative descriptor for a configurable global hotkey action in Dial.
+/// </summary>
+public sealed record RadioHotkeySpec(
+    string Id,
+    string Glyph,
+    string TitleLocalizationKey,
+    string? ModuleOptionKey,
+    string DefaultChord);
+
+/// <summary>
+/// Shared catalog and persistence helpers for customizable Dial global hotkeys.
+/// </summary>
+public static class RadioHotkeyCatalog
+{
+    public static IReadOnlyList<RadioHotkeySpec> Actions { get; } = (RadioHotkeySpec[])
+    [
+        new(RadioHotkeyDefaults.PlayPauseId, "\uE768", "Radio.Settings.Hotkey.PlayPause", RadioOptions.HotkeyPlayPause, RadioHotkeyDefaults.PlayPause),
+        new(RadioHotkeyDefaults.NextId, "\uE893", "Radio.Settings.Hotkey.Next", RadioOptions.HotkeyNextStation, RadioHotkeyDefaults.Next),
+        new(RadioHotkeyDefaults.PrevId, "\uE892", "Radio.Settings.Hotkey.Prev", RadioOptions.HotkeyPreviousStation, RadioHotkeyDefaults.Prev),
+        new(RadioHotkeyDefaults.MuteId, "\uE767", "Radio.Settings.Hotkey.Mute", RadioOptions.HotkeyMute, RadioHotkeyDefaults.Mute),
+        new(RadioHotkeyDefaults.ToggleWindowId, "\uE8A7", "Radio.Settings.Hotkey.ToggleWindow", null, RadioHotkeyDefaults.ToggleWindow)
+    ];
+
+    public static string GetConfiguredChord(ISettingsService settings, RadioHotkeySpec spec)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(spec);
+
+        var raw = spec.ModuleOptionKey is null
+            ? settings.Current.ToggleWindowHotkey
+            : settings.GetOption(spec.ModuleOptionKey, spec.DefaultChord);
+
+        if (HotkeyService.TryParseHotkeyString(raw, out var mods, out var vk) &&
+            HotkeyService.TryFormatNormalizedHotkey(mods, vk, requireModifier: true, out var normalized))
+        {
+            return normalized;
+        }
+
+        return spec.DefaultChord;
+    }
+
+    public static void SetConfiguredChord(ISettingsService settings, RadioHotkeySpec spec, string chord)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(spec);
+
+        if (!HotkeyService.TryParseHotkeyString(chord, out var mods, out var vk) ||
+            !HotkeyService.TryFormatNormalizedHotkey(mods, vk, requireModifier: true, out var normalized))
+        {
+            return;
+        }
+
+        if (spec.ModuleOptionKey is null)
+        {
+            settings.Update(s => s.ToggleWindowHotkey = normalized);
+        }
+        else
+        {
+            settings.SetOption(spec.ModuleOptionKey, normalized);
+        }
+    }
+
+    public static void ResetAllToDefaults(ISettingsService settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        foreach (var spec in Actions)
+        {
+            if (spec.ModuleOptionKey is not null)
+            {
+                settings.SetOption(spec.ModuleOptionKey, spec.DefaultChord, autoSave: false);
+            }
+        }
+
+        settings.Update(s => s.ToggleWindowHotkey = RadioHotkeyDefaults.ToggleWindow, autoSave: true);
+    }
+
+    public static bool AreAllDefaults(ISettingsService settings)
+        => Actions.All(spec => string.Equals(GetConfiguredChord(settings, spec), spec.DefaultChord, StringComparison.OrdinalIgnoreCase));
 }
 
 /// <summary>

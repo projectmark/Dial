@@ -598,4 +598,62 @@ public sealed class DialRadioTests : IDisposable
         Assert.Empty(nlKeys.Except(enKeys));
         Assert.Empty(enKeys.Except(nlKeys));
     }
+
+    [Fact]
+    public void HotkeyService_ParsesAndNormalizesLettersDigitsAndModifiers()
+    {
+        Assert.Equal(37, Chassis.Core.Hotkeys.HotkeyService.SelectableVirtualKeys.Count);
+        Assert.Contains((uint)'A', Chassis.Core.Hotkeys.HotkeyService.SelectableVirtualKeys);
+        Assert.Contains((uint)'5', Chassis.Core.Hotkeys.HotkeyService.SelectableVirtualKeys);
+        Assert.Contains(0x20u, Chassis.Core.Hotkeys.HotkeyService.SelectableVirtualKeys);
+
+        Assert.True(Chassis.Core.Hotkeys.HotkeyService.TryParseHotkeyString(" shift + ctrl + alt + 7 ", out var mods, out var vk));
+        Assert.Equal(
+            Chassis.Core.Hotkeys.HotkeyModifiers.Control | Chassis.Core.Hotkeys.HotkeyModifiers.Alt | Chassis.Core.Hotkeys.HotkeyModifiers.Shift,
+            mods);
+        Assert.Equal((uint)'7', vk);
+        Assert.True(Chassis.Core.Hotkeys.HotkeyService.TryFormatNormalizedHotkey(mods, vk, requireModifier: true, out var normalized));
+        Assert.Equal("Ctrl+Alt+Shift+7", normalized);
+
+        // Bare key without Ctrl/Alt/Shift must be rejected when requireModifier=true
+        Assert.False(Chassis.Core.Hotkeys.HotkeyService.TryFormatNormalizedHotkey(
+            Chassis.Core.Hotkeys.HotkeyModifiers.None,
+            'P',
+            requireModifier: true,
+            out _));
+
+        // Non-ASCII letters are not valid Win32 VK codes
+        Assert.False(Chassis.Core.Hotkeys.HotkeyService.TryParseHotkeyString("Ctrl+é", out _, out _));
+    }
+
+    [Fact]
+    public void RadioHotkeyCatalog_CustomizesPersistsAndResetsAllActions()
+    {
+        var paths = new PathService(_tempRoot);
+        var settings = new Chassis.Core.Settings.SettingsService(paths);
+
+        Assert.Equal(5, RadioHotkeyCatalog.Actions.Count);
+        Assert.True(RadioHotkeyCatalog.AreAllDefaults(settings));
+
+        var playSpec = RadioHotkeyCatalog.Actions.First(a => a.Id == RadioHotkeyDefaults.PlayPauseId);
+        var toggleSpec = RadioHotkeyCatalog.Actions.First(a => a.Id == RadioHotkeyDefaults.ToggleWindowId);
+
+        RadioHotkeyCatalog.SetConfiguredChord(settings, playSpec, "Shift+Ctrl+9");
+        RadioHotkeyCatalog.SetConfiguredChord(settings, toggleSpec, "Alt+Shift+D");
+
+        Assert.False(RadioHotkeyCatalog.AreAllDefaults(settings));
+        Assert.Equal("Ctrl+Shift+9", RadioHotkeyCatalog.GetConfiguredChord(settings, playSpec));
+        Assert.Equal("Alt+Shift+D", RadioHotkeyCatalog.GetConfiguredChord(settings, toggleSpec));
+
+        // Reload from disk and verify persistence
+        var reloaded = new Chassis.Core.Settings.SettingsService(paths);
+        Assert.Equal("Ctrl+Shift+9", RadioHotkeyCatalog.GetConfiguredChord(reloaded, playSpec));
+        Assert.Equal("Alt+Shift+D", RadioHotkeyCatalog.GetConfiguredChord(reloaded, toggleSpec));
+
+        // Reset restores all defaults cleanly
+        RadioHotkeyCatalog.ResetAllToDefaults(reloaded);
+        Assert.True(RadioHotkeyCatalog.AreAllDefaults(reloaded));
+        Assert.Equal(RadioHotkeyDefaults.PlayPause, RadioHotkeyCatalog.GetConfiguredChord(reloaded, playSpec));
+        Assert.Equal(RadioHotkeyDefaults.ToggleWindow, RadioHotkeyCatalog.GetConfiguredChord(reloaded, toggleSpec));
+    }
 }

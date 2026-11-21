@@ -68,10 +68,12 @@ scripts/
 | `Ctrl+1` / `Ctrl+2` / `Ctrl+9` | Navigeer naar Radio / Ontdekken / Instellingen |
 | `F1` | Open Kennisbank & Changelog |
 | `Ctrl+M` | Schakel tussen volledig venster en Mini-speler |
-| `Ctrl+Alt+P` *(globaal, optioneel)* | Afspelen / Stoppen |
-| `Ctrl+Alt+N` / `Ctrl+Alt+B` *(globaal, optioneel)* | Volgende / Vorige zender |
-| `Ctrl+Alt+M` *(globaal, optioneel)* | Geluid dempen aan/uit |
-| `Ctrl+Shift+Space` *(globaal, optioneel)* | Venster tonen / verbergen naar systeemvak |
+| `Ctrl+Alt+P` *(standaard, aanpasbaar)* | Afspelen / Stoppen |
+| `Ctrl+Alt+N` / `Ctrl+Alt+B` *(standaard, aanpasbaar)* | Volgende / Vorige zender |
+| `Ctrl+Alt+M` *(standaard, aanpasbaar)* | Geluid dempen aan/uit |
+| `Ctrl+Shift+Space` *(standaard, aanpasbaar)* | Venster tonen / verbergen naar systeemvak |
+
+> Alle globale sneltoetsen zijn onder **Instellingen → Radio** naar eigen wens in te stellen met elke combinatie van `Ctrl`, `Alt` en/of `Shift` + een letter (`A–Z`), cijfer (`0–9`) of `Space` (inclusief directe toetsopname).
 
 ---
 
