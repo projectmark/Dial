@@ -1,6 +1,7 @@
 using Chassis.Core.Data;
 using Chassis.Core.Localization;
 using Chassis.Core.Settings;
+using Chassis.Core.Versioning;
 using Windows.Media;
 using Windows.Media.Core;
 using Windows.Media.Playback;
@@ -43,9 +44,9 @@ public interface IRadioPlayerService : IDisposable
 public sealed class RadioPlayerService : IRadioPlayerService
 {
     private const string StationsCollectionName = "stations";
-    private const string LastStationOptionKey = "radio.last_station_id";
-    private const string VolumeOptionKey = "radio.volume";
-    private const string MuteOptionKey = "radio.muted";
+    private const string LastStationOptionKey = RadioOptions.LastStationId;
+    private const string VolumeOptionKey = RadioOptions.Volume;
+    private const string MuteOptionKey = RadioOptions.Muted;
 
     private readonly IDataStore<RadioStation> _stationStore;
     private readonly ISettingsService _settings;
@@ -1120,9 +1121,9 @@ public sealed class RadioPlayerService : IRadioPlayerService
             var updater = _smtc.DisplayUpdater;
             updater.Type = MediaPlaybackType.Music;
             updater.MusicProperties.Title = string.IsNullOrWhiteSpace(snapshot.NowPlaying)
-                ? snapshot.ActiveStation?.Name ?? "Dial"
+                ? snapshot.ActiveStation?.Name ?? AppVersion.ProductTitle
                 : snapshot.NowPlaying;
-            updater.MusicProperties.Artist = snapshot.ActiveStation?.Name ?? "Dial";
+            updater.MusicProperties.Artist = snapshot.ActiveStation?.Name ?? AppVersion.ProductTitle;
             updater.Update();
         }
         catch

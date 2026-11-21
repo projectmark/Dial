@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.WindowsRuntime;
+using Chassis.Core.Versioning;
 using Windows.Media.Core;
 using Windows.Media.MediaProperties;
 
@@ -49,14 +50,11 @@ public sealed class BufferedFrameMediaSource : IDisposable
     private string? _lastTitle;
     private bool _disposed;
 
-    public BufferedFrameMediaSource(string upstreamUrl, int bufferSeconds)
+    public BufferedFrameMediaSource(string upstreamUrl, int bufferSeconds, HttpClient? httpClient = null)
     {
         _upstreamUrl = upstreamUrl;
         _bufferSeconds = AudioBufferSizing.NormalizeSeconds(bufferSeconds);
-        _http = new HttpClient
-        {
-            Timeout = Timeout.InfiniteTimeSpan
-        };
+        _http = httpClient ?? BufferedStreamProxy.SharedStreamHttpClient;
     }
 
     public double BufferedSeconds => _queue?.BufferedDuration.TotalSeconds ?? 0;
@@ -280,7 +278,7 @@ public sealed class BufferedFrameMediaSource : IDisposable
     {
         var request = new HttpRequestMessage(HttpMethod.Get, _upstreamUrl);
         request.Headers.TryAddWithoutValidation("Icy-MetaData", "1");
-        request.Headers.TryAddWithoutValidation("User-Agent", "Dial/1.0");
+        request.Headers.TryAddWithoutValidation("User-Agent", AppVersion.UserAgent);
         return _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
     }
 
@@ -524,6 +522,5 @@ public sealed class BufferedFrameMediaSource : IDisposable
         _fallbackProxy = null;
 
         _cts.Dispose();
-        _http.Dispose();
     }
 }

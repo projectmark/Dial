@@ -29,6 +29,10 @@ public sealed partial class SettingsCard : UserControl
         nameof(ActionContent), typeof(object), typeof(SettingsCard),
         new PropertyMetadata(null, OnContentChanged));
 
+    public static readonly DependencyProperty IsDimmedProperty = DependencyProperty.Register(
+        nameof(IsDimmed), typeof(bool), typeof(SettingsCard),
+        new PropertyMetadata(false, OnVisualStateChanged));
+
     private readonly Border _outerBorder;
     private readonly Grid _layoutGrid;
     private readonly ColumnDefinition _rightColumn;
@@ -43,8 +47,9 @@ public sealed partial class SettingsCard : UserControl
         {
             FontFamily = new FontFamily("Segoe Fluent Icons"),
             FontSize = 16,
+            Width = 20,
+            HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 12, 0),
             Visibility = Visibility.Collapsed
         };
 
@@ -70,11 +75,15 @@ public sealed partial class SettingsCard : UserControl
         textStack.Children.Add(_titleBlock);
         textStack.Children.Add(_descriptionBlock);
 
-        var leftCluster = new StackPanel
+        var leftCluster = new Grid
         {
-            Orientation = Orientation.Horizontal,
+            ColumnSpacing = 12,
             VerticalAlignment = VerticalAlignment.Center
         };
+        leftCluster.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        leftCluster.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        Grid.SetColumn(_icon, 0);
+        Grid.SetColumn(textStack, 1);
         leftCluster.Children.Add(_icon);
         leftCluster.Children.Add(textStack);
 
@@ -138,11 +147,25 @@ public sealed partial class SettingsCard : UserControl
         set => SetValue(ActionContentProperty, value);
     }
 
+    public bool IsDimmed
+    {
+        get => (bool)GetValue(IsDimmedProperty);
+        set => SetValue(IsDimmedProperty, value);
+    }
+
     private static void OnContentChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         if (d is SettingsCard card)
         {
             card.SyncParts();
+        }
+    }
+
+    private static void OnVisualStateChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is SettingsCard card)
+        {
+            card.ApplySurfaceBrushes();
         }
     }
 
@@ -182,14 +205,23 @@ public sealed partial class SettingsCard : UserControl
     private void ApplySurfaceBrushes()
     {
         var dark = ActualTheme == ElementTheme.Dark;
+        var dimmed = IsDimmed;
         _outerBorder.Background = new SolidColorBrush(
-            dark ? Color.FromArgb(0x18, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xC8, 0xFF, 0xFF, 0xFF));
+            dark
+                ? Color.FromArgb(dimmed ? (byte)0x0E : (byte)0x18, 0xFF, 0xFF, 0xFF)
+                : Color.FromArgb(dimmed ? (byte)0x80 : (byte)0xC8, 0xFF, 0xFF, 0xFF));
         _outerBorder.BorderBrush = new SolidColorBrush(
-            dark ? Color.FromArgb(0x28, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x14, 0x00, 0x00, 0x00));
+            dark
+                ? Color.FromArgb(dimmed ? (byte)0x1A : (byte)0x28, 0xFF, 0xFF, 0xFF)
+                : Color.FromArgb(dimmed ? (byte)0x0C : (byte)0x14, 0x00, 0x00, 0x00));
         _titleBlock.Foreground = new SolidColorBrush(
-            dark ? Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xE4, 0x00, 0x00, 0x00));
+            dimmed
+                ? (dark ? Color.FromArgb(0x6E, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x6E, 0x00, 0x00, 0x00))
+                : (dark ? Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xE4, 0x00, 0x00, 0x00)));
         _descriptionBlock.Foreground = new SolidColorBrush(
-            dark ? Color.FromArgb(0xC8, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x96, 0x00, 0x00, 0x00));
+            dimmed
+                ? (dark ? Color.FromArgb(0x5A, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x5C, 0x00, 0x00, 0x00))
+                : (dark ? Color.FromArgb(0xC8, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x96, 0x00, 0x00, 0x00)));
         _icon.Foreground = _titleBlock.Foreground;
     }
 }

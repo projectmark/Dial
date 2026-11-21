@@ -6,7 +6,7 @@ namespace Dial.Modules.Radio;
 /// <summary>
 /// Samples live stereo Left/Right output levels for the active audio session of the current process.
 /// </summary>
-public interface IAudioMeterService
+public interface IAudioMeterService : IDisposable
 {
     (float Left, float Right) SampleCurrentProcessLevels();
 }
@@ -115,6 +115,19 @@ public sealed class AudioMeterService : IAudioMeterService
         }
 
         _cachedMeter = null;
+    }
+
+    public void Dispose()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            ReleaseCachedMeter();
+        }
     }
 
     [SupportedOSPlatform("windows")]

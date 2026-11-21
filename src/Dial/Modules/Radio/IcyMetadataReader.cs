@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Text;
+using Chassis.Core.Versioning;
 
 namespace Dial.Modules.Radio;
 
@@ -158,7 +159,7 @@ public sealed class IcyMetadataReader : IIcyMetadataReader
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, streamUrl);
         request.Headers.TryAddWithoutValidation("Icy-MetaData", "1");
-        request.Headers.UserAgent.Add(new ProductInfoHeaderValue("Dial", "0.2"));
+        request.Headers.TryAddWithoutValidation("User-Agent", AppVersion.UserAgent);
 
         using var response = await _httpClient
             .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)

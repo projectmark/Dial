@@ -12,7 +12,7 @@ public static class Program
     {
         WinRT.ComWrappersSupport.InitializeComWrappers();
 
-        var mainInstance = AppInstance.FindOrRegisterForKey($"Chassis_SingleInstance_{AppVersion.EntryAssemblyName}");
+        var mainInstance = AppInstance.FindOrRegisterForKey(AppVersion.SingleInstanceKey);
         if (!mainInstance.IsCurrent)
         {
             mainInstance.RedirectActivationToAsync(AppInstance.GetCurrent().GetActivatedEventArgs())

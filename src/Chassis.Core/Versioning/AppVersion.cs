@@ -120,4 +120,21 @@ public static class AppVersion
             return chars.Length == 0 ? "CHASSIS" : new string(chars).ToUpperInvariant();
         }
     }
+
+    /// <summary>
+    /// Dynamic RFC-compliant HTTP User-Agent string derived from assembly identity and version (e.g. 'Dial/0.3.0').
+    /// </summary>
+    public static string UserAgent
+    {
+        get
+        {
+            var token = new string(EntryAssemblyName.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_').ToArray());
+            if (string.IsNullOrEmpty(token))
+            {
+                token = "ChassisApp";
+            }
+
+            return $"{token}/{BaseVersion}";
+        }
+    }
 }

@@ -658,7 +658,7 @@ public sealed partial class MainWindow : Window
             }
             else if (args.DidPresenterChange &&
                      presenter.State == OverlappedPresenterState.Minimized &&
-                     _settings.GetOption("radio.minimize_to_tray", true))
+                     _settings.GetOption(RadioOptions.MinimizeToTray, true))
             {
                 CollapseToTray(showNotification: false);
             }

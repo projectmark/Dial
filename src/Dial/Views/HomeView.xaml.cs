@@ -1,6 +1,7 @@
 using Chassis.Core.Data;
 using Chassis.Core.Localization;
 using Chassis.Core.Settings;
+using Chassis.Core.Versioning;
 using Chassis.UI.Theme;
 using Dial.Modules.Radio;
 using Microsoft.Extensions.DependencyInjection;
@@ -1448,9 +1449,9 @@ public sealed partial class HomeView : UserControl
         var picker = new FileSavePicker
         {
             SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
-            SuggestedFileName = "dial-favorites"
+            SuggestedFileName = $"{AppVersion.EntryAssemblyName.ToLowerInvariant()}-favorites"
         };
-        picker.FileTypeChoices.Add("Chassis Package", new List<string> { ".chassispack" });
+        picker.FileTypeChoices.Add(_localization["Radio.Share.PackageFileType"], new List<string> { ".chassispack" });
         InitializeWithWindow.Initialize(picker, MainWindow.Instance.Hwnd);
 
         var file = await picker.PickSaveFileAsync();

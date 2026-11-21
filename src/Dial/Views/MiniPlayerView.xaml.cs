@@ -152,8 +152,8 @@ public sealed partial class MiniPlayerView : UserControl
         ToolTipService.SetToolTip(PinBtn, _localization["Radio.MiniPlayer.Pin"]);
         AutomationProperties.SetName(ExpandBtn, _localization["Radio.MiniPlayer.Expand"]);
         ToolTipService.SetToolTip(ExpandBtn, _localization["Radio.MiniPlayer.Expand"]);
-        AutomationProperties.SetName(LeftVuTrack, "Left channel VU meter");
-        AutomationProperties.SetName(RightVuTrack, "Right channel VU meter");
+        AutomationProperties.SetName(LeftVuTrack, _localization["Radio.Vu.Left"]);
+        AutomationProperties.SetName(RightVuTrack, _localization["Radio.Vu.Right"]);
     }
 
     private void RenderState(RadioStateSnapshot snapshot)

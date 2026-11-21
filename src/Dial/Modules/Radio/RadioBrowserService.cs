@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Chassis.Core.Versioning;
 
 namespace Dial.Modules.Radio;
 
@@ -40,7 +41,7 @@ public sealed class RadioBrowserService : IRadioBrowserService
         {
             Timeout = TimeSpan.FromSeconds(10)
         };
-        _httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Dial", "0.2"));
+        _httpClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", AppVersion.UserAgent);
     }
 
     public async Task<IReadOnlyList<RadioBrowserCountry>> GetCountriesAsync(CancellationToken ct = default)

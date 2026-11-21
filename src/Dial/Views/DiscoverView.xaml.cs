@@ -189,7 +189,7 @@ public sealed partial class DiscoverView : UserControl
 
         CountryResetBtn.Content = _localization["Discover.CountryReset"];
         AutomationProperties.SetName(CountryResetBtn, _localization["Discover.CountryReset"]);
-        AutomationProperties.SetName(CountryQuickNlBtn, "Nederland (NL)");
+        AutomationProperties.SetName(CountryQuickNlBtn, _localization["Discover.QuickCountryNl"]);
 
         RefreshResultStates();
     }

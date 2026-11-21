@@ -563,4 +563,39 @@ public sealed class DialRadioTests : IDisposable
 
         queue.Complete();
     }
+
+    [Fact]
+    public void AppVersion_UserAgentAndRadioOptionsAreDynamicAndUnique()
+    {
+        var ua = Chassis.Core.Versioning.AppVersion.UserAgent;
+        Assert.Contains('/', ua);
+        Assert.StartsWith(Chassis.Core.Versioning.AppVersion.EntryAssemblyName, ua, StringComparison.OrdinalIgnoreCase);
+
+        var allOptionKeys = typeof(RadioOptions)
+            .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Where(f => f.IsLiteral && f.FieldType == typeof(string))
+            .Select(f => (string)f.GetRawConstantValue()!)
+            .ToList();
+
+        Assert.True(allOptionKeys.Count >= 10);
+        Assert.Equal(allOptionKeys.Count, allOptionKeys.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.All(allOptionKeys, k => Assert.StartsWith("radio.", k, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void LocaleFiles_HaveIdenticalKeysAcrossNlAndEn()
+    {
+        var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var nlPath = Path.Combine(repoRoot, "src", "Dial", "Assets", "Locales", "nl-NL.json");
+        var enPath = Path.Combine(repoRoot, "src", "Dial", "Assets", "Locales", "en-US.json");
+
+        Assert.True(File.Exists(nlPath), $"Missing {nlPath}");
+        Assert.True(File.Exists(enPath), $"Missing {enPath}");
+
+        var nlKeys = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(nlPath))!.Keys.ToHashSet(StringComparer.Ordinal);
+        var enKeys = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(enPath))!.Keys.ToHashSet(StringComparer.Ordinal);
+
+        Assert.Empty(nlKeys.Except(enKeys));
+        Assert.Empty(enKeys.Except(nlKeys));
+    }
 }

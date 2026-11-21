@@ -39,7 +39,7 @@ public sealed class ListeningStatsService : IListeningStatsService
     public ListeningStatsService(IDataStore<StationListeningStat> store)
     {
         _store = store;
-        _tickTimer = new Timer(OnTick, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+        _tickTimer = new Timer(OnTick, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
     }
 
     public TimeSpan CurrentSessionElapsed
@@ -120,12 +120,18 @@ public sealed class ListeningStatsService : IListeningStatsService
                     _activeStationName = station.Name;
                 }
 
+                var wasPlaying = _isPlaying;
                 _isPlaying = true;
+                if (!wasPlaying)
+                {
+                    _tickTimer.Change(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+                }
             }
             else if (snapshot.State is RadioPlaybackState.Stopped or RadioPlaybackState.Error)
             {
                 var wasActive = _isPlaying || _sessionElapsed > TimeSpan.Zero;
                 _isPlaying = false;
+                _tickTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
                 _sessionElapsed = TimeSpan.Zero;
                 if (wasActive)
                 {
@@ -140,6 +146,7 @@ public sealed class ListeningStatsService : IListeningStatsService
             else
             {
                 _isPlaying = false;
+                _tickTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
             }
         }
 

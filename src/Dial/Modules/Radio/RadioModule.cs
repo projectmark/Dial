@@ -20,13 +20,13 @@ namespace Dial.Modules.Radio;
 /// </summary>
 public sealed class RadioModule : IChassisModule
 {
-    public const string AutoplayOptionKey = "radio.autoplay_on_start";
-    public const string BufferSecondsOptionKey = AudioBufferSizing.OptionKey;
-    public const string ViewModeOptionKey = "radio.view_mode";
-    public const string ShowNumbersOptionKey = "radio.show_position_numbers";
-    public const string AlignmentOptionKey = "radio.list_alignment";
-    public const string FontSizeOptionKey = "radio.list_font_size";
-    public const string MiniAlwaysOnTopOptionKey = "radio.mini_always_on_top";
+    public const string AutoplayOptionKey = RadioOptions.AutoplayOnStart;
+    public const string BufferSecondsOptionKey = RadioOptions.BufferSeconds;
+    public const string ViewModeOptionKey = RadioOptions.ViewMode;
+    public const string ShowNumbersOptionKey = RadioOptions.ShowPositionNumbers;
+    public const string AlignmentOptionKey = RadioOptions.ListAlignment;
+    public const string FontSizeOptionKey = RadioOptions.ListFontSize;
+    public const string MiniAlwaysOnTopOptionKey = RadioOptions.MiniAlwaysOnTop;
 
     private const string HotkeyPlayPauseId = "dial.play_pause";
     private const string HotkeyNextId = "dial.next";
@@ -219,7 +219,16 @@ public sealed class RadioModule : IChassisModule
 
             var isSyncing = false;
 
-            var autoplayToggle = new ToggleSwitch { OnContent = string.Empty, OffContent = string.Empty };
+            static ToggleSwitch CreateAlignedToggle() => new()
+            {
+                MinWidth = 0,
+                Padding = new Thickness(0),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                OnContent = string.Empty,
+                OffContent = string.Empty
+            };
+
+            var autoplayToggle = CreateAlignedToggle();
             var autoplayCard = new SettingsCard { Glyph = "\uE7F6", ActionContent = autoplayToggle };
 
             var buffer2sItem = new ComboBoxItem { Tag = 2 };
@@ -227,7 +236,7 @@ public sealed class RadioModule : IChassisModule
             var buffer10sItem = new ComboBoxItem { Tag = 10 };
             var buffer15sItem = new ComboBoxItem { Tag = 15 };
             var buffer30sItem = new ComboBoxItem { Tag = 30 };
-            var bufferCombo = new ComboBox { MinWidth = 210 };
+            var bufferCombo = new ComboBox { Width = 220 };
             bufferCombo.Items.Add(buffer2sItem);
             bufferCombo.Items.Add(buffer5sItem);
             bufferCombo.Items.Add(buffer10sItem);
@@ -237,18 +246,18 @@ public sealed class RadioModule : IChassisModule
 
             var viewModeListItem = new ComboBoxItem { Tag = "list" };
             var viewModeGridItem = new ComboBoxItem { Tag = "grid" };
-            var viewModeCombo = new ComboBox { MinWidth = 170 };
+            var viewModeCombo = new ComboBox { Width = 220 };
             viewModeCombo.Items.Add(viewModeListItem);
             viewModeCombo.Items.Add(viewModeGridItem);
             var viewModeCard = new SettingsCard { Glyph = "\uE8FD", ActionContent = viewModeCombo };
 
-            var numbersToggle = new ToggleSwitch { OnContent = string.Empty, OffContent = string.Empty };
+            var numbersToggle = CreateAlignedToggle();
             var numbersCard = new SettingsCard { Glyph = "\uE8A9", ActionContent = numbersToggle };
 
             var alignLeftItem = new ComboBoxItem { Tag = "left" };
             var alignCenterItem = new ComboBoxItem { Tag = "center" };
             var alignRightItem = new ComboBoxItem { Tag = "right" };
-            var alignCombo = new ComboBox { MinWidth = 170 };
+            var alignCombo = new ComboBox { Width = 220 };
             alignCombo.Items.Add(alignLeftItem);
             alignCombo.Items.Add(alignCenterItem);
             alignCombo.Items.Add(alignRightItem);
@@ -257,13 +266,13 @@ public sealed class RadioModule : IChassisModule
             var sizeCompactItem = new ComboBoxItem { Tag = "compact" };
             var sizeNormalItem = new ComboBoxItem { Tag = "normal" };
             var sizeLargeItem = new ComboBoxItem { Tag = "large" };
-            var sizeCombo = new ComboBox { MinWidth = 170 };
+            var sizeCombo = new ComboBox { Width = 220 };
             sizeCombo.Items.Add(sizeCompactItem);
             sizeCombo.Items.Add(sizeNormalItem);
             sizeCombo.Items.Add(sizeLargeItem);
             var sizeCard = new SettingsCard { Glyph = "\uE8E9", ActionContent = sizeCombo };
 
-            var hotkeysToggle = new ToggleSwitch { OnContent = string.Empty, OffContent = string.Empty };
+            var hotkeysToggle = CreateAlignedToggle();
             var hotkeysCard = new SettingsCard { Glyph = "\uE765", ActionContent = hotkeysToggle };
 
             void SyncFromSettings()

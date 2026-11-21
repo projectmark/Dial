@@ -1,6 +1,24 @@
 namespace Dial.Modules.Radio;
 
 /// <summary>
+/// Centralized module option keys stored inside <c>AppSettings.ModuleOptions</c>.
+/// </summary>
+public static class RadioOptions
+{
+    public const string LastStationId = "radio.last_station_id";
+    public const string Volume = "radio.volume";
+    public const string Muted = "radio.muted";
+    public const string BufferSeconds = "radio.buffer_seconds";
+    public const string AutoplayOnStart = "radio.autoplay_on_start";
+    public const string ViewMode = "radio.view_mode";
+    public const string ShowPositionNumbers = "radio.show_position_numbers";
+    public const string ListAlignment = "radio.list_alignment";
+    public const string ListFontSize = "radio.list_font_size";
+    public const string MiniAlwaysOnTop = "radio.mini_always_on_top";
+    public const string MinimizeToTray = "radio.minimize_to_tray";
+}
+
+/// <summary>
 /// Represents a radio channel and its live stream endpoints.
 /// </summary>
 public sealed record RadioStation(

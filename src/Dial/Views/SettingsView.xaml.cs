@@ -6,7 +6,9 @@ using Chassis.Core.Updates;
 using Chassis.Core.Versioning;
 using Chassis.UI.Navigation;
 using Chassis.UI.Theme;
+using Dial.Modules.Radio;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -16,7 +18,7 @@ namespace Dial.Views;
 
 public sealed partial class SettingsView : UserControl
 {
-    private const string MinimizeToTrayOptionKey = "radio.minimize_to_tray";
+    private const string MinimizeToTrayOptionKey = RadioOptions.MinimizeToTray;
 
     private sealed record CategoryEntry(string Id, string LocalizationKey, UIElement? CustomSection = null);
 
@@ -84,7 +86,11 @@ public sealed partial class SettingsView : UserControl
         }
     }
 
-    private void OnLanguageChanged(string _) => ApplyLocalization();
+    private void OnLanguageChanged(string _)
+    {
+        ApplyLocalization();
+        BuildAccentSwatches();
+    }
 
     private void InitializeCategoriesOnce()
     {
@@ -199,6 +205,15 @@ public sealed partial class SettingsView : UserControl
         }
 
         var enabled = !_settings.Current.UseSystemAccentColor;
+        AccentSwatchesCard.IsDimmed = !enabled;
+        AccentSwatchesCard.Description = enabled
+            ? _localization["Settings.AccentSwatches.Desc"]
+            : _localization["Settings.AccentSwatches.DisabledBySystemDesc"];
+        SwatchesPanel.Opacity = enabled ? 1.0 : 0.42;
+
+        var transparentBrush = new SolidColorBrush(Colors.Transparent);
+        var hoverRingBg = _theme.GetCardBackgroundBrush();
+
         foreach (var hex in palette)
         {
             if (!ThemeManager.TryParseHexColor(hex, out var parsedColor))
@@ -207,23 +222,82 @@ public sealed partial class SettingsView : UserControl
             }
 
             var isCurrent = enabled && string.Equals(_settings.Current.CustomAccentHex, hex, StringComparison.OrdinalIgnoreCase);
+            var ringBorderBrush = isCurrent ? _theme.GetTextPrimaryBrush() : _theme.GetCardBorderBrush();
+
+            var colorDot = new Border
+            {
+                Width = 20,
+                Height = 20,
+                CornerRadius = new CornerRadius(10),
+                Background = new SolidColorBrush(parsedColor),
+                BorderThickness = new Thickness(1),
+                BorderBrush = _theme.GetCardBorderBrush(),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
             var swatchBtn = new Button
             {
-                Width = 28,
-                Height = 28,
+                Width = 30,
+                Height = 30,
                 Padding = new Thickness(0),
-                CornerRadius = new CornerRadius(14),
-                BorderThickness = new Thickness(isCurrent ? 2 : 1),
-                Background = new SolidColorBrush(parsedColor),
-                BorderBrush = isCurrent ? _theme.GetTextPrimaryBrush() : _theme.GetCardBorderBrush(),
+                CornerRadius = new CornerRadius(15),
+                BorderThickness = new Thickness(1),
+                Background = isCurrent ? _theme.GetAdaptiveAccentTintBrush() : transparentBrush,
+                BorderBrush = ringBorderBrush,
+                Content = colorDot,
                 IsEnabled = enabled
             };
+
+            swatchBtn.Resources["ButtonBackground"] = isCurrent ? _theme.GetAdaptiveAccentTintBrush() : transparentBrush;
+            swatchBtn.Resources["ButtonBackgroundPointerOver"] = hoverRingBg;
+            swatchBtn.Resources["ButtonBackgroundPressed"] = hoverRingBg;
+            swatchBtn.Resources["ButtonBackgroundDisabled"] = transparentBrush;
+            swatchBtn.Resources["ButtonBorderBrush"] = ringBorderBrush;
+            swatchBtn.Resources["ButtonBorderBrushPointerOver"] = _theme.GetTextPrimaryBrush();
+            swatchBtn.Resources["ButtonBorderBrushPressed"] = _theme.GetTextPrimaryBrush();
+            swatchBtn.Resources["ButtonBorderBrushDisabled"] = _theme.GetCardBorderBrush();
+
+            var tooltipText = enabled
+                ? hex
+                : _localization["Settings.AccentSwatches.DisabledBySystemDesc"];
             AutomationProperties.SetName(swatchBtn, hex);
-            ToolTipService.SetToolTip(swatchBtn, hex);
+            ToolTipService.SetToolTip(swatchBtn, tooltipText);
 
             var capturedHex = hex;
             swatchBtn.Click += (_, _) => ApplyCustomAccentHex(capturedHex, savePresetSlot: false);
             SwatchesPanel.Children.Add(swatchBtn);
+        }
+
+        var addBtn = new Button
+        {
+            Width = 30,
+            Height = 30,
+            Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(15),
+            Content = new FontIcon
+            {
+                FontFamily = new FontFamily("Segoe Fluent Icons"),
+                Glyph = "\uE710",
+                FontSize = 12
+            },
+            IsEnabled = enabled
+        };
+        var addTooltip = enabled
+            ? _localization["Settings.AccentSwatches.CustomPickerTooltip"]
+            : _localization["Settings.AccentSwatches.DisabledBySystemDesc"];
+        AutomationProperties.SetName(addBtn, _localization["Settings.AccentSwatches.Title"]);
+        ToolTipService.SetToolTip(addBtn, addTooltip);
+        _theme.BindInteractiveButton(addBtn, () => false);
+        addBtn.Click += (_, _) => ShowCustomAccentFlyout(addBtn);
+        SwatchesPanel.Children.Add(addBtn);
+    }
+
+    private void ShowCustomAccentFlyout(FrameworkElement anchor)
+    {
+        if (_settings.Current.UseSystemAccentColor)
+        {
+            return;
         }
 
         var picker = new ColorPicker
@@ -239,9 +313,9 @@ public sealed partial class SettingsView : UserControl
         var confirmBtn = new Button
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            Height = 32,
+            Height = 34,
             CornerRadius = new CornerRadius(6),
-            Content = "OK"
+            Content = _localization["Common.Apply"]
         };
         _theme.BindInteractiveButton(confirmBtn, () => false);
 
@@ -258,24 +332,7 @@ public sealed partial class SettingsView : UserControl
             flyout.Hide();
         };
 
-        var addBtn = new Button
-        {
-            Width = 28,
-            Height = 28,
-            Padding = new Thickness(0),
-            CornerRadius = new CornerRadius(14),
-            Content = new FontIcon
-            {
-                FontFamily = new FontFamily("Segoe Fluent Icons"),
-                Glyph = "\uE710",
-                FontSize = 12
-            },
-            Flyout = flyout,
-            IsEnabled = enabled
-        };
-        AutomationProperties.SetName(addBtn, _localization["Settings.AccentSwatches.Title"]);
-        _theme.BindInteractiveButton(addBtn, () => false);
-        SwatchesPanel.Children.Add(addBtn);
+        flyout.ShowAt(anchor);
     }
 
     private void ApplyCustomAccentHex(string hex, bool savePresetSlot)
@@ -337,7 +394,9 @@ public sealed partial class SettingsView : UserControl
         AutomationProperties.SetName(SystemAccentToggle, _localization["Settings.SystemAccent.Title"]);
 
         AccentSwatchesCard.Title = _localization["Settings.AccentSwatches.Title"];
-        AccentSwatchesCard.Description = _localization["Settings.AccentSwatches.Desc"];
+        AccentSwatchesCard.Description = _settings.Current.UseSystemAccentColor
+            ? _localization["Settings.AccentSwatches.DisabledBySystemDesc"]
+            : _localization["Settings.AccentSwatches.Desc"];
 
         BackgroundHeading.Text = _localization["Settings.Category.Background"];
         CloseToTrayCard.Title = _localization["Settings.Background.CloseToTray.Title"];

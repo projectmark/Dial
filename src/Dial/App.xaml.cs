@@ -23,6 +23,8 @@ namespace Dial;
 
 public sealed partial class App : Application
 {
+    private const string ShellTrayInitializedOptionKey = "shell.tray_initialized";
+
     private static readonly IReadOnlyList<IChassisModule> _modules = new IChassisModule[]
     {
         new RadioModule()
@@ -75,6 +77,7 @@ public sealed partial class App : Application
 
         try { Services.GetService<ISleepTimerService>()?.Dispose(); } catch { }
         try { (Services.GetService<IRadioPlayerService>() as IDisposable)?.Dispose(); } catch { }
+        try { Services.GetService<IAudioMeterService>()?.Dispose(); } catch { }
         try { Services.GetService<IListeningStatsService>()?.Dispose(); } catch { }
         try { Services.GetService<IRadioBrowserService>()?.Dispose(); } catch { }
         try { Services.GetService<IHotkeyService>()?.Dispose(); } catch { }
@@ -111,11 +114,11 @@ public sealed partial class App : Application
     private static void EnsureFirstRunTrayDefaults()
     {
         var settings = Services.GetRequiredService<ISettingsService>();
-        if (!settings.GetOption("shell.tray_initialized", false))
+        if (!settings.GetOption(ShellTrayInitializedOptionKey, false))
         {
             settings.Update(s => s.CloseToTrayEnabled = true, autoSave: false);
-            settings.SetOption("radio.minimize_to_tray", true, autoSave: false);
-            settings.SetOption("shell.tray_initialized", true, autoSave: true);
+            settings.SetOption(RadioOptions.MinimizeToTray, true, autoSave: false);
+            settings.SetOption(ShellTrayInitializedOptionKey, true, autoSave: true);
         }
     }
 
@@ -243,9 +246,20 @@ public sealed partial class App : Application
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
-                new ChangelogChange("Changed", "Changelog.v029.FrameAccuratePlayoutEngine")
+                new ChangelogChange("Changed", "Changelog.v030.RefactorZeroHardcoding"),
+                new ChangelogChange("Fixed", "Changelog.v030.SettingsAlignmentAndColorPicker"),
+                new ChangelogChange("Added", "Changelog.v030.DocumentationReadme")
             },
             IsLatest: true));
+
+        changelog.RegisterRelease(new ChangelogRelease(
+            Version: "0.2.9",
+            ReleaseDate: new DateTime(2026, 11, 21),
+            Changes: new ChangelogChange[]
+            {
+                new ChangelogChange("Changed", "Changelog.v029.FrameAccuratePlayoutEngine")
+            },
+            IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
             Version: "0.2.8",

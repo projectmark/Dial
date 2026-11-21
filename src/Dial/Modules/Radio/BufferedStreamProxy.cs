@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Text;
+using Chassis.Core.Versioning;
 
 namespace Dial.Modules.Radio;
 
@@ -11,7 +12,7 @@ namespace Dial.Modules.Radio;
 /// </summary>
 public static class AudioBufferSizing
 {
-    public const string OptionKey = "radio.buffer_seconds";
+    public const string OptionKey = RadioOptions.BufferSeconds;
     public const int DefaultBufferSeconds = 5;
     public const int DefaultBitrateKbps = 192;
 
@@ -425,9 +426,22 @@ public sealed class BufferedStreamProxy : IDisposable
     private const int ChunkSize = 16_384;
     private const int MaxTransientReconnects = 3;
 
+    /// <summary>
+    /// Shared pooled HTTP client for live audio streams to preserve DNS/TLS reuse and avoid socket exhaustion.
+    /// </summary>
+    internal static HttpClient SharedStreamHttpClient { get; } = new(new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(10),
+        ConnectTimeout = TimeSpan.FromSeconds(12),
+        AutomaticDecompression = DecompressionMethods.None,
+        AllowAutoRedirect = true
+    })
+    {
+        Timeout = Timeout.InfiniteTimeSpan
+    };
+
     private readonly string _upstreamUrl;
     private readonly HttpClient _http;
-    private readonly bool _ownsHttpClient;
     private readonly CancellationTokenSource _cts = new();
     private readonly TaskCompletionSource<bool> _initialPrebufferReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Lock _clientLock = new();
@@ -447,19 +461,7 @@ public sealed class BufferedStreamProxy : IDisposable
     {
         _upstreamUrl = upstreamUrl;
         _bufferSeconds = AudioBufferSizing.NormalizeSeconds(bufferSeconds);
-        if (httpClient is not null)
-        {
-            _http = httpClient;
-            _ownsHttpClient = false;
-        }
-        else
-        {
-            _http = new HttpClient
-            {
-                Timeout = Timeout.InfiniteTimeSpan
-            };
-            _ownsHttpClient = true;
-        }
+        _http = httpClient ?? SharedStreamHttpClient;
     }
 
     public Uri? LocalUri { get; private set; }
@@ -575,7 +577,7 @@ public sealed class BufferedStreamProxy : IDisposable
     {
         var request = new HttpRequestMessage(HttpMethod.Get, _upstreamUrl);
         request.Headers.TryAddWithoutValidation("Icy-MetaData", "1");
-        request.Headers.TryAddWithoutValidation("User-Agent", "Dial/1.0");
+        request.Headers.TryAddWithoutValidation("User-Agent", AppVersion.UserAgent);
         return _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
     }
 
@@ -936,9 +938,5 @@ public sealed class BufferedStreamProxy : IDisposable
 
         try { _listener?.Stop(); } catch { }
         _cts.Dispose();
-        if (_ownsHttpClient)
-        {
-            _http.Dispose();
-        }
     }
 }
