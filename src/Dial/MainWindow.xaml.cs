@@ -29,10 +29,8 @@ public sealed partial class MainWindow : Window
     private const int WmGetMinMaxInfo = 0x0024;
     private const int MinLogicalWidth = 420;
     private const int MinLogicalHeight = 480;
-    private const int MiniLogicalWidth = 400;
-    private const int MiniLogicalHeight = 176;
-    private const int MiniMinLogicalWidth = 380;
-    private const int MiniMinLogicalHeight = 152;
+    private const int MiniClientLogicalWidth = 408;
+    private const int MiniClientLogicalHeight = 186;
     private const int DefaultLogicalWidth = 860;
     private const int DefaultLogicalHeight = 660;
     private const nuint SubclassId = 1001;
@@ -62,6 +60,7 @@ public sealed partial class MainWindow : Window
     private SizeInt32 _preMiniSize;
     private PointInt32 _preMiniPosition;
     private bool _preMiniMaximized;
+    private SizeInt32 _miniLockedWindowSize;
     private bool _isInitializingBounds = true;
 
     public static MainWindow? Instance { get; private set; }
@@ -199,26 +198,41 @@ public sealed partial class MainWindow : Window
                 : _appWindow.Position;
 
             _isMiniPlayerMode = true;
+            _miniLockedWindowSize = default;
             NavBarRow.Height = new GridLength(0);
             NavBarBorder.Visibility = Visibility.Collapsed;
             _viewCache.Clear();
             ContentHost.Content = new MiniPlayerView();
 
-            var miniW = (int)Math.Ceiling(MiniLogicalWidth * scale);
-            var miniH = (int)Math.Ceiling(MiniLogicalHeight * scale);
-            var area = DisplayArea.GetFromWindowId(_appWindow.Id, DisplayAreaFallback.Primary).WorkArea;
-            var targetX = Math.Clamp(_preMiniPosition.X, area.X, Math.Max(area.X, area.X + area.Width - miniW));
-            var targetY = Math.Clamp(_preMiniPosition.Y, area.Y, Math.Max(area.Y, area.Y + area.Height - miniH));
+            if (_appWindow.Presenter is OverlappedPresenter miniPresenter)
+            {
+                miniPresenter.IsResizable = false;
+                miniPresenter.IsMaximizable = false;
+            }
 
-            _appWindow.MoveAndResize(new RectInt32(targetX, targetY, miniW, miniH));
+            var miniClientW = (int)Math.Ceiling(MiniClientLogicalWidth * scale);
+            var miniClientH = (int)Math.Ceiling(MiniClientLogicalHeight * scale);
+            _appWindow.ResizeClient(new SizeInt32(miniClientW, miniClientH));
+
+            var actualMiniSize = _appWindow.Size;
+            _miniLockedWindowSize = actualMiniSize;
+
+            var area = DisplayArea.GetFromWindowId(_appWindow.Id, DisplayAreaFallback.Primary).WorkArea;
+            var targetX = Math.Clamp(_preMiniPosition.X, area.X, Math.Max(area.X, area.X + area.Width - actualMiniSize.Width));
+            var targetY = Math.Clamp(_preMiniPosition.Y, area.Y, Math.Max(area.Y, area.Y + area.Height - actualMiniSize.Height));
+
+            _appWindow.Move(new PointInt32(targetX, targetY));
             ApplyMiniAlwaysOnTop();
         }
         else
         {
+            _miniLockedWindowSize = default;
             _isMiniPlayerMode = false;
             if (_appWindow.Presenter is OverlappedPresenter presenter)
             {
                 presenter.IsAlwaysOnTop = false;
+                presenter.IsResizable = true;
+                presenter.IsMaximizable = true;
             }
 
             NavBarRow.Height = new GridLength(52);
@@ -538,15 +552,24 @@ public sealed partial class MainWindow : Window
     {
         if (msg == WmGetMinMaxInfo && lParam != IntPtr.Zero)
         {
-            var dpi = GetDpiForWindow(hwnd);
-            var scale = dpi > 0 ? dpi / 96.0 : 1.0;
-
-            var minW = _isMiniPlayerMode ? MiniMinLogicalWidth : MinLogicalWidth;
-            var minH = _isMiniPlayerMode ? MiniMinLogicalHeight : MinLogicalHeight;
-
             var mmi = Marshal.PtrToStructure<MINMAXINFO>(lParam);
-            mmi.ptMinTrackSize.X = (int)Math.Ceiling(minW * scale);
-            mmi.ptMinTrackSize.Y = (int)Math.Ceiling(minH * scale);
+
+            if (_isMiniPlayerMode && _miniLockedWindowSize.Width > 0 && _miniLockedWindowSize.Height > 0)
+            {
+                mmi.ptMinTrackSize.X = _miniLockedWindowSize.Width;
+                mmi.ptMinTrackSize.Y = _miniLockedWindowSize.Height;
+                mmi.ptMaxTrackSize.X = _miniLockedWindowSize.Width;
+                mmi.ptMaxTrackSize.Y = _miniLockedWindowSize.Height;
+            }
+            else if (!_isMiniPlayerMode)
+            {
+                var dpi = GetDpiForWindow(hwnd);
+                var scale = dpi > 0 ? dpi / 96.0 : 1.0;
+
+                mmi.ptMinTrackSize.X = (int)Math.Ceiling(MinLogicalWidth * scale);
+                mmi.ptMinTrackSize.Y = (int)Math.Ceiling(MinLogicalHeight * scale);
+            }
+
             Marshal.StructureToPtr(mmi, lParam, fDeleteOld: false);
             return IntPtr.Zero;
         }
