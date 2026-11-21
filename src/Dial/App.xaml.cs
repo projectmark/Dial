@@ -243,9 +243,18 @@ public sealed partial class App : Application
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
-                new ChangelogChange("Changed", "Changelog.v025.MovedEditButton")
+                new ChangelogChange("Changed", "Changelog.v026.StickyEditToolbar")
             },
             IsLatest: true));
+
+        changelog.RegisterRelease(new ChangelogRelease(
+            Version: "0.2.5",
+            ReleaseDate: new DateTime(2026, 11, 21),
+            Changes: new ChangelogChange[]
+            {
+                new ChangelogChange("Changed", "Changelog.v025.MovedEditButton")
+            },
+            IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
             Version: "0.2.4",
