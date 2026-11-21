@@ -20,6 +20,7 @@
     <AssemblyName>Dial</AssemblyName>
     <Product>Dial</Product>
     <AssemblyTitle>Dial</AssemblyTitle>
+    <ApplicationIcon>Assets\dial.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>

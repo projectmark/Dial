@@ -82,9 +82,18 @@ public sealed partial class MainWindow : Window
         _appWindow = AppWindow.GetFromWindowId(windowId);
 
         Title = AppVersion.ProductTitle;
+        var assetStem = AppVersion.EntryAssemblyName.ToLowerInvariant();
+        var windowIconPath = Path.Combine(AppContext.BaseDirectory, "Assets", $"{assetStem}.ico");
+        var titleLogoPath = Path.Combine(AppContext.BaseDirectory, "Assets", $"{assetStem}.png");
+
         if (_appWindow is not null)
         {
             _appWindow.Title = AppVersion.ProductTitle;
+            if (File.Exists(windowIconPath))
+            {
+                _appWindow.SetIcon(windowIconPath);
+            }
+
             RestoreWindowBounds();
             _appWindow.Changed += OnAppWindowChanged;
             _appWindow.Closing += OnAppWindowClosing;
@@ -95,6 +104,7 @@ public sealed partial class MainWindow : Window
                 _localization["TitleBar.FeedbackTooltip"],
                 _localization["TitleBar.HelpTooltip"],
                 _localization["TitleBar.VersionTooltip"]);
+            TitleBarControl.SetLogoImage(titleLogoPath);
         }
 
         _isInitializingBounds = false;

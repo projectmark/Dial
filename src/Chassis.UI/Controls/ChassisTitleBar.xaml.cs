@@ -1,9 +1,12 @@
 using Chassis.Core.Versioning;
 using Chassis.UI.Theme;
+using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Foundation;
 using Windows.Graphics;
 
@@ -82,6 +85,24 @@ public sealed partial class ChassisTitleBar : UserControl
         ApplyThemeVisuals();
     }
 
+    public void SetLogoImage(string? imagePath)
+    {
+        if (!string.IsNullOrWhiteSpace(imagePath) && File.Exists(imagePath))
+        {
+            LogoImage.Source = new BitmapImage(new Uri(imagePath));
+            LogoImage.Visibility = Visibility.Visible;
+            LogoGlyph.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            LogoImage.Source = null;
+            LogoImage.Visibility = Visibility.Collapsed;
+            LogoGlyph.Visibility = Visibility.Visible;
+        }
+
+        ApplyThemeVisuals();
+    }
+
     public void ApplyThemeVisuals()
     {
         if (_theme is null)
@@ -90,9 +111,19 @@ public sealed partial class ChassisTitleBar : UserControl
         }
 
         TitleBlock.Foreground = _theme.GetTextPrimaryBrush();
-        LogoBadge.Background = _theme.GetAdaptiveAccentTintBrush();
-        LogoBadge.BorderBrush = _theme.GetAdaptiveAccentBrush();
-        LogoGlyph.Foreground = _theme.GetAdaptiveAccentBrush();
+        if (LogoImage.Visibility == Visibility.Visible)
+        {
+            LogoBadge.BorderThickness = new Thickness(0);
+            LogoBadge.Background = new SolidColorBrush(Colors.Transparent);
+            LogoBadge.BorderBrush = new SolidColorBrush(Colors.Transparent);
+        }
+        else
+        {
+            LogoBadge.BorderThickness = new Thickness(1);
+            LogoBadge.Background = _theme.GetAdaptiveAccentTintBrush();
+            LogoBadge.BorderBrush = _theme.GetAdaptiveAccentBrush();
+            LogoGlyph.Foreground = _theme.GetAdaptiveAccentBrush();
+        }
 
         VersionStatusDot.Fill = HelpUnreadDot.Visibility == Visibility.Visible
             ? _theme.GetAdaptiveAccentBrush()
