@@ -243,12 +243,21 @@ public sealed partial class App : Application
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
+                new ChangelogChange("Fixed", "Changelog.v021.FixedMiniPlayer")
+            },
+            IsLatest: true));
+
+        changelog.RegisterRelease(new ChangelogRelease(
+            Version: "0.2.0",
+            ReleaseDate: new DateTime(2026, 11, 21),
+            Changes: new ChangelogChange[]
+            {
                 new ChangelogChange("Added", "Changelog.v020.RebrandDial"),
                 new ChangelogChange("Added", "Changelog.v020.AddedDiscover"),
                 new ChangelogChange("Added", "Changelog.v020.AddedTimerStats"),
                 new ChangelogChange("Added", "Changelog.v020.AddedMiniHotkeys")
             },
-            IsLatest: true));
+            IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
             Version: "0.1.0",

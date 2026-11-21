@@ -143,6 +143,7 @@
   "KB.Article.Storage.Title": "Lokale Opslag & Single-Instance",
   "KB.Article.Storage.Summary": "Geïsoleerde instellingen in %AppData%\\Dial en bescherming tegen dubbele vensters.",
   "KB.Article.Storage.Body": "Favorieten, luisterstatistieken en voorkeuren worden atomisch opgeslagen onder %AppData%\\Dial\\. Een tweede start brengt automatisch het actieve venster naar voren.",
+  "Changelog.v021.FixedMiniPlayer": "Mini-speler vergrendeld op een vaste clientgrootte (408×186) zodat de onderkant nooit meer wordt afgesneden.",
   "Changelog.v020.RebrandDial": "Applicatie hernoemd naar Dial met volledig aanpasbare Radi-oh!-stijl favorietenlijst (lijst/kaarten, nummers, uitlijning, lettergrootte) en bewerkmodus.",
   "Changelog.v020.AddedDiscover": "Tabblad Ontdekken toegevoegd met wereldwijde Radio Browser API-zoekfunctie, A–Z landenfilter en directe voorbeluistering.",
   "Changelog.v020.AddedTimerStats": "Slaaptimer tot 6 uur, live sessietijd, luisterstatistieken per zender en favorieten-import/export (.chassispack & deelcodes) toegevoegd.",

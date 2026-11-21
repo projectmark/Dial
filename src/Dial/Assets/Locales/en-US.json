@@ -143,6 +143,7 @@
   "KB.Article.Storage.Title": "Isolated Storage & Single-Instance",
   "KB.Article.Storage.Summary": "Settings stored under %AppData%\\Dial with single-instance activation redirect.",
   "KB.Article.Storage.Body": "Favorites, listening statistics, and preferences persist atomically in %AppData%\\Dial\\. Launching Dial a second time brings the active instance back into focus.",
+  "Changelog.v021.FixedMiniPlayer": "Locked the mini-player to a fixed client size (408×186) so the bottom edge is never clipped.",
   "Changelog.v020.RebrandDial": "Rebranded to Dial with customizable Radi-oh!-inspired favorites (list/grid toggle, position numbers, alignment, font scale) and inline edit mode.",
   "Changelog.v020.AddedDiscover": "Added Discover tab powered by Radio Browser API with A–Z country filter, genre/name search, and live stream preview.",
   "Changelog.v020.AddedTimerStats": "Added 6-hour sleep timer, live session counter, persistent per-station listening stats, and .chassispack / DIAL-v1 favorites sharing.",
