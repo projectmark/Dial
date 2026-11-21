@@ -2,7 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Chassis.Core/Chassis.Core.csproj" />
     <Project Path="src/Chassis.UI/Chassis.UI.csproj" />
-    <Project Path="src/KinkRadio/KinkRadio.csproj" />
+    <Project Path="src/Dial/Dial.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/AppxShim/AppxShim.csproj" />

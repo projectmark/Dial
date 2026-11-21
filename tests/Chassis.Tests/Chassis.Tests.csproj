@@ -19,7 +19,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\..\src\KinkRadio\Modules\Radio\RadioModels.cs" Link="Radio\RadioModels.cs" />
-    <Compile Include="..\..\src\KinkRadio\Modules\Radio\IcyMetadataReader.cs" Link="Radio\IcyMetadataReader.cs" />
+    <Compile Include="..\..\src\Dial\Modules\Radio\RadioModels.cs" Link="Radio\RadioModels.cs" />
+    <Compile Include="..\..\src\Dial\Modules\Radio\IcyMetadataReader.cs" Link="Radio\IcyMetadataReader.cs" />
+    <Compile Include="..\..\src\Dial\Modules\Radio\RadioBrowserService.cs" Link="Radio\RadioBrowserService.cs" />
+    <Compile Include="..\..\src\Dial\Modules\Radio\SleepTimerService.cs" Link="Radio\SleepTimerService.cs" />
+    <Compile Include="..\..\src\Dial\Modules\Radio\ListeningStatsService.cs" Link="Radio\ListeningStatsService.cs" />
   </ItemGroup>
 </Project>

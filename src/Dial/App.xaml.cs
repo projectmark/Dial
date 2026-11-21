@@ -13,13 +13,13 @@ using Chassis.Core.Updates;
 using Chassis.Core.Versioning;
 using Chassis.UI.Navigation;
 using Chassis.UI.Theme;
-using KinkRadio.Modules.Radio;
-using KinkRadio.Views;
+using Dial.Modules.Radio;
+using Dial.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Windows.System;
 
-namespace KinkRadio;
+namespace Dial;
 
 public sealed partial class App : Application
 {
@@ -73,7 +73,10 @@ public sealed partial class App : Application
     {
         IsExiting = true;
 
+        try { Services.GetService<ISleepTimerService>()?.Dispose(); } catch { }
         try { (Services.GetService<IRadioPlayerService>() as IDisposable)?.Dispose(); } catch { }
+        try { Services.GetService<IListeningStatsService>()?.Dispose(); } catch { }
+        try { Services.GetService<IRadioBrowserService>()?.Dispose(); } catch { }
         try { Services.GetService<IHotkeyService>()?.Dispose(); } catch { }
         try { Services.GetService<ITrayService>()?.Dispose(); } catch { }
         try { Services.GetService<Win32MessageHost>()?.Dispose(); } catch { }
@@ -167,12 +170,21 @@ public sealed partial class App : Application
             ShowInNav: true));
 
         nav.Register(new NavigationItemDescriptor(
+            Id: "discover",
+            TitleLocalizationKey: "Nav.Discover",
+            Glyph: "\uE721",
+            ViewFactory: () => new DiscoverView(),
+            AcceleratorKey: VirtualKey.Number2,
+            Order: 1,
+            ShowInNav: true));
+
+        nav.Register(new NavigationItemDescriptor(
             Id: "help",
             TitleLocalizationKey: "Nav.Help",
             Glyph: "\uE897",
             ViewFactory: () => new HelpView(),
-            AcceleratorKey: VirtualKey.Number2,
-            Order: 1,
+            AcceleratorKey: VirtualKey.Number3,
+            Order: 2,
             ShowInNav: false));
 
         nav.Register(new NavigationItemDescriptor(
@@ -186,14 +198,24 @@ public sealed partial class App : Application
 
         var kb = Services.GetRequiredService<IKnowledgeBaseService>();
         kb.RegisterArticle(new KnowledgeArticle(
-            Id: "kink-stations",
+            Id: "dial-stations",
             CategoryKey: "KB.Category.Radio",
             TitleKey: "KB.Article.Stations.Title",
             SummaryKey: "KB.Article.Stations.Summary",
             BodyKey: "KB.Article.Stations.Body",
-            BadgeText: "4 Zenders",
-            CopyableReference: "https://kink.nl",
+            BadgeText: "40k+ Streams",
+            CopyableReference: "https://api.radio-browser.info",
             Order: 1));
+
+        kb.RegisterArticle(new KnowledgeArticle(
+            Id: "dial-timer-mini",
+            CategoryKey: "KB.Category.Radio",
+            TitleKey: "KB.Article.TimerMini.Title",
+            SummaryKey: "KB.Article.TimerMini.Summary",
+            BodyKey: "KB.Article.TimerMini.Body",
+            BadgeText: "Ctrl+M",
+            CopyableReference: "Ctrl+Alt+P / N / B / M",
+            Order: 2));
 
         kb.RegisterArticle(new KnowledgeArticle(
             Id: "tray-background",
@@ -203,7 +225,7 @@ public sealed partial class App : Application
             BodyKey: "KB.Article.Tray.Body",
             BadgeText: "Tray & GC",
             CopyableReference: "CollapseToTray() -> GC.Collect(1)",
-            Order: 2));
+            Order: 3));
 
         kb.RegisterArticle(new KnowledgeArticle(
             Id: "appdata-storage",
@@ -213,7 +235,7 @@ public sealed partial class App : Application
             BodyKey: "KB.Article.Storage.Body",
             BadgeText: AppVersion.ShortDisplayVersion,
             CopyableReference: Services.GetRequiredService<IPathService>().RootDirectory,
-            Order: 3));
+            Order: 4));
 
         var changelog = Services.GetRequiredService<IChangelogService>();
         changelog.RegisterRelease(new ChangelogRelease(
@@ -221,10 +243,21 @@ public sealed partial class App : Application
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
-                new ChangelogChange("Added", "Changelog.v010.AddedRadio"),
-                new ChangelogChange("Added", "Changelog.v010.AddedTray"),
-                new ChangelogChange("Added", "Changelog.v010.AddedIcySmtc")
+                new ChangelogChange("Added", "Changelog.v020.RebrandDial"),
+                new ChangelogChange("Added", "Changelog.v020.AddedDiscover"),
+                new ChangelogChange("Added", "Changelog.v020.AddedTimerStats"),
+                new ChangelogChange("Added", "Changelog.v020.AddedMiniHotkeys")
             },
             IsLatest: true));
+
+        changelog.RegisterRelease(new ChangelogRelease(
+            Version: "0.1.0",
+            ReleaseDate: new DateTime(2026, 11, 21),
+            Changes: new ChangelogChange[]
+            {
+                new ChangelogChange("Added", "Changelog.v010.AddedRadio"),
+                new ChangelogChange("Added", "Changelog.v010.AddedTray")
+            },
+            IsLatest: false));
     }
 }

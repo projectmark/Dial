@@ -5,29 +5,38 @@ using Windows.Media;
 using Windows.Media.Core;
 using Windows.Media.Playback;
 
-namespace KinkRadio.Modules.Radio;
+namespace Dial.Modules.Radio;
 
 /// <summary>
-/// Manages live radio playback, station selection, volume/mute persistence, ICY track metadata, and Windows SMTC integration.
+/// Manages live radio playback, favorites CRUD, preview playback, volume persistence, ICY metadata, and Windows SMTC.
 /// </summary>
 public interface IRadioPlayerService : IDisposable
 {
     IReadOnlyList<RadioStation> Stations { get; }
     RadioStateSnapshot Current { get; }
     event Action<RadioStateSnapshot>? StateChanged;
+    event Action? StationsChanged;
 
     Task InitializeAsync(CancellationToken ct = default);
     Task PlayStationAsync(string stationId, CancellationToken ct = default);
+    Task PreviewStationAsync(RadioStation station, CancellationToken ct = default);
     Task TogglePlayPauseAsync(CancellationToken ct = default);
     void Stop();
     Task NextStationAsync(CancellationToken ct = default);
     Task PreviousStationAsync(CancellationToken ct = default);
     void SetVolume(double volume);
     void ToggleMute();
+
+    Task AddStationAsync(RadioStation station, CancellationToken ct = default);
+    Task UpdateStationAsync(RadioStation station, CancellationToken ct = default);
+    Task RemoveStationAsync(string stationId, CancellationToken ct = default);
+    Task MoveStationAsync(string stationId, int delta, CancellationToken ct = default);
+    Task ImportStationsAsync(IEnumerable<RadioStation> stations, bool replaceExisting = false, CancellationToken ct = default);
+    bool IsFavorite(string streamUrlOrId);
 }
 
 /// <summary>
-/// Windows MediaPlayer-backed radio service for KINK live streams.
+/// Windows MediaPlayer-backed radio service for Dial live streams.
 /// </summary>
 public sealed class RadioPlayerService : IRadioPlayerService
 {
@@ -44,12 +53,13 @@ public sealed class RadioPlayerService : IRadioPlayerService
     private readonly Lock _gate = new();
 
     private List<RadioStation> _stations;
-    private RadioStation _activeStation;
+    private RadioStation? _activeStation;
     private RadioPlaybackState _state = RadioPlaybackState.Stopped;
     private string? _nowPlaying;
     private string? _errorMessage;
     private double _volume;
     private bool _isMuted;
+    private bool _isPreview;
     private bool _usingFallback;
     private long _playbackGeneration;
     private MediaSource? _currentSource;
@@ -114,6 +124,7 @@ public sealed class RadioPlayerService : IRadioPlayerService
     }
 
     public event Action<RadioStateSnapshot>? StateChanged;
+    public event Action? StationsChanged;
 
     public async Task InitializeAsync(CancellationToken ct = default)
     {
@@ -127,28 +138,13 @@ public sealed class RadioPlayerService : IRadioPlayerService
             }
             else
             {
-                var merged = stored.ToList();
-                var addedMissing = false;
-                foreach (var fallback in KinkStationCatalog.DefaultStations)
-                {
-                    if (!merged.Any(s => string.Equals(s.Id, fallback.Id, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        merged.Add(fallback);
-                        addedMissing = true;
-                    }
-                }
-
-                if (addedMissing)
-                {
-                    await _stationStore.SaveAllAsync(StationsCollectionName, merged, ct).ConfigureAwait(false);
-                }
-
+                var sanitized = stored.Select(SanitizeStation).ToList();
                 lock (_gate)
                 {
-                    _stations = merged;
+                    _stations = sanitized;
                     var savedId = _settings.GetOption(LastStationOptionKey, _stations[0].Id);
                     _activeStation = _stations.FirstOrDefault(s => string.Equals(s.Id, savedId, StringComparison.OrdinalIgnoreCase))
-                        ?? _stations[0];
+                        ?? _stations.FirstOrDefault();
                 }
             }
         }
@@ -158,6 +154,7 @@ public sealed class RadioPlayerService : IRadioPlayerService
         }
 
         UpdateSmtcDisplay();
+        StationsChanged?.Invoke();
         NotifyStateChanged();
     }
 
@@ -165,13 +162,20 @@ public sealed class RadioPlayerService : IRadioPlayerService
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        RadioStation station;
+        RadioStation? station;
         long generation;
         lock (_gate)
         {
             station = _stations.FirstOrDefault(s => string.Equals(s.Id, stationId, StringComparison.OrdinalIgnoreCase))
-                ?? _activeStation;
+                ?? _activeStation
+                ?? _stations.FirstOrDefault();
+            if (station is null)
+            {
+                return Task.CompletedTask;
+            }
+
             _activeStation = station;
+            _isPreview = false;
             _usingFallback = false;
             _state = RadioPlaybackState.Buffering;
             _nowPlaying = null;
@@ -186,16 +190,48 @@ public sealed class RadioPlayerService : IRadioPlayerService
         return Task.CompletedTask;
     }
 
+    public Task PreviewStationAsync(RadioStation station, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(station);
+
+        var normalized = SanitizeStation(station);
+        long generation;
+        bool isAlreadyFavorite;
+
+        lock (_gate)
+        {
+            isAlreadyFavorite = _stations.Any(s =>
+                string.Equals(s.Id, normalized.Id, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(s.StreamUrl, normalized.StreamUrl, StringComparison.OrdinalIgnoreCase));
+
+            _activeStation = normalized;
+            _isPreview = !isAlreadyFavorite;
+            _usingFallback = false;
+            _state = RadioPlaybackState.Buffering;
+            _nowPlaying = null;
+            _errorMessage = null;
+            generation = ++_playbackGeneration;
+        }
+
+        StartStream(normalized.StreamUrl, generation);
+        UpdateSmtcDisplay();
+        NotifyStateChanged();
+        return Task.CompletedTask;
+    }
+
     public Task TogglePlayPauseAsync(CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         bool shouldStop;
-        string stationId;
+        RadioStation? active;
+        bool isPreview;
         lock (_gate)
         {
             shouldStop = _state is RadioPlaybackState.Playing or RadioPlaybackState.Buffering;
-            stationId = _activeStation.Id;
+            active = _activeStation ?? _stations.FirstOrDefault();
+            isPreview = _isPreview;
         }
 
         if (shouldStop)
@@ -204,7 +240,12 @@ public sealed class RadioPlayerService : IRadioPlayerService
             return Task.CompletedTask;
         }
 
-        return PlayStationAsync(stationId, ct);
+        if (active is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        return isPreview ? PreviewStationAsync(active, ct) : PlayStationAsync(active.Id, ct);
     }
 
     public void Stop()
@@ -288,9 +329,231 @@ public sealed class RadioPlayerService : IRadioPlayerService
         NotifyStateChanged();
     }
 
+    public async Task AddStationAsync(RadioStation station, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(station);
+
+        var normalized = SanitizeStation(station);
+        List<RadioStation> snapshot;
+        bool activePromoted = false;
+
+        lock (_gate)
+        {
+            var existingIdx = _stations.FindIndex(s =>
+                string.Equals(s.Id, normalized.Id, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(s.StreamUrl, normalized.StreamUrl, StringComparison.OrdinalIgnoreCase));
+
+            if (existingIdx >= 0)
+            {
+                return;
+            }
+
+            _stations.Add(normalized);
+            if (_activeStation is not null &&
+                string.Equals(_activeStation.StreamUrl, normalized.StreamUrl, StringComparison.OrdinalIgnoreCase))
+            {
+                _activeStation = normalized;
+                _isPreview = false;
+                activePromoted = true;
+            }
+            else if (_activeStation is null)
+            {
+                _activeStation = normalized;
+            }
+
+            snapshot = _stations.ToList();
+        }
+
+        await _stationStore.SaveAllAsync(StationsCollectionName, snapshot, ct).ConfigureAwait(false);
+        StationsChanged?.Invoke();
+        if (activePromoted)
+        {
+            UpdateSmtcDisplay();
+            NotifyStateChanged();
+        }
+    }
+
+    public async Task UpdateStationAsync(RadioStation station, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(station);
+
+        var normalized = SanitizeStation(station);
+        List<RadioStation> snapshot;
+        bool activeUpdated = false;
+
+        lock (_gate)
+        {
+            var idx = _stations.FindIndex(s => string.Equals(s.Id, normalized.Id, StringComparison.OrdinalIgnoreCase));
+            if (idx < 0)
+            {
+                return;
+            }
+
+            _stations[idx] = normalized;
+            if (_activeStation is not null && string.Equals(_activeStation.Id, normalized.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                _activeStation = normalized;
+                activeUpdated = true;
+            }
+
+            snapshot = _stations.ToList();
+        }
+
+        await _stationStore.SaveAllAsync(StationsCollectionName, snapshot, ct).ConfigureAwait(false);
+        StationsChanged?.Invoke();
+        if (activeUpdated)
+        {
+            UpdateSmtcDisplay();
+            NotifyStateChanged();
+        }
+    }
+
+    public async Task RemoveStationAsync(string stationId, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (string.IsNullOrWhiteSpace(stationId))
+        {
+            return;
+        }
+
+        List<RadioStation> snapshot;
+        bool stateChanged = false;
+
+        lock (_gate)
+        {
+            var removed = _stations.RemoveAll(s => string.Equals(s.Id, stationId, StringComparison.OrdinalIgnoreCase));
+            if (removed == 0)
+            {
+                return;
+            }
+
+            if (_activeStation is not null && string.Equals(_activeStation.Id, stationId, StringComparison.OrdinalIgnoreCase))
+            {
+                if (_state is RadioPlaybackState.Playing or RadioPlaybackState.Buffering)
+                {
+                    _isPreview = true;
+                }
+                else
+                {
+                    _activeStation = _stations.FirstOrDefault();
+                }
+
+                stateChanged = true;
+            }
+
+            snapshot = _stations.ToList();
+        }
+
+        await _stationStore.SaveAllAsync(StationsCollectionName, snapshot, ct).ConfigureAwait(false);
+        StationsChanged?.Invoke();
+        if (stateChanged)
+        {
+            UpdateSmtcDisplay();
+            NotifyStateChanged();
+        }
+    }
+
+    public async Task MoveStationAsync(string stationId, int delta, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (string.IsNullOrWhiteSpace(stationId) || delta == 0)
+        {
+            return;
+        }
+
+        List<RadioStation> snapshot;
+        lock (_gate)
+        {
+            var idx = _stations.FindIndex(s => string.Equals(s.Id, stationId, StringComparison.OrdinalIgnoreCase));
+            if (idx < 0)
+            {
+                return;
+            }
+
+            var targetIdx = Math.Clamp(idx + delta, 0, _stations.Count - 1);
+            if (targetIdx == idx)
+            {
+                return;
+            }
+
+            var item = _stations[idx];
+            _stations.RemoveAt(idx);
+            _stations.Insert(targetIdx, item);
+            snapshot = _stations.ToList();
+        }
+
+        await _stationStore.SaveAllAsync(StationsCollectionName, snapshot, ct).ConfigureAwait(false);
+        StationsChanged?.Invoke();
+    }
+
+    public async Task ImportStationsAsync(IEnumerable<RadioStation> stations, bool replaceExisting = false, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(stations);
+
+        var incoming = stations
+            .Where(s => s is not null && !string.IsNullOrWhiteSpace(s.Name) && !string.IsNullOrWhiteSpace(s.StreamUrl))
+            .Select(SanitizeStation)
+            .ToList();
+
+        if (incoming.Count == 0)
+        {
+            return;
+        }
+
+        List<RadioStation> snapshot;
+        lock (_gate)
+        {
+            if (replaceExisting)
+            {
+                _stations = incoming;
+            }
+            else
+            {
+                var existingUrls = new HashSet<string>(_stations.Select(s => s.StreamUrl), StringComparer.OrdinalIgnoreCase);
+                var existingIds = new HashSet<string>(_stations.Select(s => s.Id), StringComparer.OrdinalIgnoreCase);
+                foreach (var item in incoming)
+                {
+                    if (existingUrls.Add(item.StreamUrl) && existingIds.Add(item.Id))
+                    {
+                        _stations.Add(item);
+                    }
+                }
+            }
+
+            if (_activeStation is null)
+            {
+                _activeStation = _stations.FirstOrDefault();
+            }
+
+            snapshot = _stations.ToList();
+        }
+
+        await _stationStore.SaveAllAsync(StationsCollectionName, snapshot, ct).ConfigureAwait(false);
+        StationsChanged?.Invoke();
+        NotifyStateChanged();
+    }
+
+    public bool IsFavorite(string streamUrlOrId)
+    {
+        if (string.IsNullOrWhiteSpace(streamUrlOrId))
+        {
+            return false;
+        }
+
+        lock (_gate)
+        {
+            return _stations.Any(s =>
+                string.Equals(s.Id, streamUrlOrId, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(s.StreamUrl, streamUrlOrId, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
     private Task StepStationAsync(int delta, CancellationToken ct)
     {
-        string targetId;
+        string? targetId;
         lock (_gate)
         {
             if (_stations.Count == 0)
@@ -298,7 +561,9 @@ public sealed class RadioPlayerService : IRadioPlayerService
                 return Task.CompletedTask;
             }
 
-            var currentIdx = _stations.FindIndex(s => string.Equals(s.Id, _activeStation.Id, StringComparison.OrdinalIgnoreCase));
+            var currentIdx = _activeStation is null
+                ? -1
+                : _stations.FindIndex(s => string.Equals(s.Id, _activeStation.Id, StringComparison.OrdinalIgnoreCase));
             var nextIdx = currentIdx < 0 ? 0 : (currentIdx + delta + _stations.Count) % _stations.Count;
             targetId = _stations[nextIdx].Id;
         }
@@ -378,7 +643,9 @@ public sealed class RadioPlayerService : IRadioPlayerService
                 return;
             }
 
-            if (!_usingFallback && !string.IsNullOrWhiteSpace(_activeStation.FallbackStreamUrl))
+            if (!_usingFallback &&
+                _activeStation is not null &&
+                !string.IsNullOrWhiteSpace(_activeStation.FallbackStreamUrl))
             {
                 _usingFallback = true;
                 _state = RadioPlaybackState.Buffering;
@@ -479,7 +746,7 @@ public sealed class RadioPlayerService : IRadioPlayerService
         switch (args.Button)
         {
             case SystemMediaTransportControlsButton.Play:
-                _ = PlayStationAsync(Current.ActiveStation?.Id ?? KinkStationCatalog.DefaultStations[0].Id);
+                _ = TogglePlayPauseAsync();
                 break;
             case SystemMediaTransportControlsButton.Pause:
             case SystemMediaTransportControlsButton.Stop:
@@ -514,9 +781,9 @@ public sealed class RadioPlayerService : IRadioPlayerService
             var updater = _smtc.DisplayUpdater;
             updater.Type = MediaPlaybackType.Music;
             updater.MusicProperties.Title = string.IsNullOrWhiteSpace(snapshot.NowPlaying)
-                ? snapshot.ActiveStation?.Name ?? "KINK Radio"
+                ? snapshot.ActiveStation?.Name ?? "Dial"
                 : snapshot.NowPlaying;
-            updater.MusicProperties.Artist = snapshot.ActiveStation?.Name ?? "KINK";
+            updater.MusicProperties.Artist = snapshot.ActiveStation?.Name ?? "Dial";
             updater.Update();
         }
         catch
@@ -524,6 +791,21 @@ public sealed class RadioPlayerService : IRadioPlayerService
             // SMTC updates are best-effort for OS media integration.
         }
     }
+
+    private static RadioStation SanitizeStation(RadioStation station)
+        => station with
+        {
+            Id = string.IsNullOrWhiteSpace(station.Id) ? $"custom-{Guid.NewGuid():N}" : station.Id.Trim(),
+            Name = station.Name.Trim(),
+            Tagline = station.Tagline ?? string.Empty,
+            StreamUrl = station.StreamUrl.Trim(),
+            FallbackStreamUrl = station.FallbackStreamUrl ?? string.Empty,
+            IconGlyph = string.IsNullOrWhiteSpace(station.IconGlyph) ? "\uE7F6" : station.IconGlyph,
+            AccentHex = string.IsNullOrWhiteSpace(station.AccentHex) ? "#0078D4" : station.AccentHex,
+            CountryCode = string.IsNullOrWhiteSpace(station.CountryCode) ? "INT" : station.CountryCode.Trim().ToUpperInvariant(),
+            Codec = string.IsNullOrWhiteSpace(station.Codec) ? "MP3" : station.Codec.Trim().ToUpperInvariant(),
+            Tags = station.Tags ?? string.Empty
+        };
 
     private void DisposeCurrentSource()
     {
@@ -538,7 +820,7 @@ public sealed class RadioPlayerService : IRadioPlayerService
     }
 
     private RadioStateSnapshot CreateSnapshotUnsafe()
-        => new(_activeStation, _state, _nowPlaying, _volume, _isMuted, _errorMessage);
+        => new(_activeStation, _state, _nowPlaying, _volume, _isMuted, _errorMessage, _isPreview);
 
     private void NotifyStateChanged()
         => StateChanged?.Invoke(Current);

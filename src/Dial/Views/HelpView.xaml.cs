@@ -11,7 +11,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Shapes;
 using Windows.ApplicationModel.DataTransfer;
 
-namespace KinkRadio.Views;
+namespace Dial.Views;
 
 public sealed partial class HelpView : UserControl
 {

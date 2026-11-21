@@ -8,7 +8,8 @@ using Chassis.Core.Versioning;
 using Chassis.UI.Dialogs;
 using Chassis.UI.Navigation;
 using Chassis.UI.Theme;
-using KinkRadio.Views;
+using Dial.Modules.Radio;
+using Dial.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI;
 using Microsoft.UI.Text;
@@ -21,15 +22,19 @@ using Windows.Graphics;
 using Windows.System;
 using WinRT.Interop;
 
-namespace KinkRadio;
+namespace Dial;
 
 public sealed partial class MainWindow : Window
 {
     private const int WmGetMinMaxInfo = 0x0024;
     private const int MinLogicalWidth = 420;
     private const int MinLogicalHeight = 480;
-    private const int DefaultLogicalWidth = 820;
-    private const int DefaultLogicalHeight = 620;
+    private const int MiniLogicalWidth = 400;
+    private const int MiniLogicalHeight = 176;
+    private const int MiniMinLogicalWidth = 380;
+    private const int MiniMinLogicalHeight = 152;
+    private const int DefaultLogicalWidth = 860;
+    private const int DefaultLogicalHeight = 660;
     private const nuint SubclassId = 1001;
 
     private readonly ILocalizationService _localization;
@@ -50,12 +55,18 @@ public sealed partial class MainWindow : Window
     private bool _compactNavLabels;
     private bool _isCollapsedToTray;
     private bool _trayNoticeShown;
+    private bool _isMiniPlayerMode;
     private SizeInt32 _lastRestoredSize;
     private PointInt32 _lastRestoredPosition;
     private bool _hasRestoredBounds;
+    private SizeInt32 _preMiniSize;
+    private PointInt32 _preMiniPosition;
+    private bool _preMiniMaximized;
     private bool _isInitializingBounds = true;
 
     public static MainWindow? Instance { get; private set; }
+    public IntPtr Hwnd => _hwnd;
+    public bool IsMiniPlayerMode => _isMiniPlayerMode;
 
     public MainWindow()
     {
@@ -113,6 +124,11 @@ public sealed partial class MainWindow : Window
 
     public void NavigateTo(string navId, bool openChangelog = false)
     {
+        if (_isMiniPlayerMode)
+        {
+            ToggleMiniPlayer();
+        }
+
         var descriptor = _navRegistry.Find(navId);
         if (descriptor is null)
         {
@@ -156,6 +172,97 @@ public sealed partial class MainWindow : Window
         await dialog.ShowAsync();
     }
 
+    public void ToggleMiniPlayer()
+    {
+        if (_appWindow is null)
+        {
+            return;
+        }
+
+        var dpi = _hwnd != IntPtr.Zero ? GetDpiForWindow(_hwnd) : 96u;
+        var scale = dpi > 0 ? dpi / 96.0 : 1.0;
+
+        if (!_isMiniPlayerMode)
+        {
+            _preMiniMaximized = _appWindow.Presenter is OverlappedPresenter p &&
+                                p.State == OverlappedPresenterState.Maximized;
+            if (_preMiniMaximized && _appWindow.Presenter is OverlappedPresenter maxPresenter)
+            {
+                maxPresenter.Restore();
+            }
+
+            _preMiniSize = _hasRestoredBounds && _lastRestoredSize.Width > 0
+                ? _lastRestoredSize
+                : _appWindow.Size;
+            _preMiniPosition = _hasRestoredBounds
+                ? _lastRestoredPosition
+                : _appWindow.Position;
+
+            _isMiniPlayerMode = true;
+            NavBarRow.Height = new GridLength(0);
+            NavBarBorder.Visibility = Visibility.Collapsed;
+            _viewCache.Clear();
+            ContentHost.Content = new MiniPlayerView();
+
+            var miniW = (int)Math.Ceiling(MiniLogicalWidth * scale);
+            var miniH = (int)Math.Ceiling(MiniLogicalHeight * scale);
+            var area = DisplayArea.GetFromWindowId(_appWindow.Id, DisplayAreaFallback.Primary).WorkArea;
+            var targetX = Math.Clamp(_preMiniPosition.X, area.X, Math.Max(area.X, area.X + area.Width - miniW));
+            var targetY = Math.Clamp(_preMiniPosition.Y, area.Y, Math.Max(area.Y, area.Y + area.Height - miniH));
+
+            _appWindow.MoveAndResize(new RectInt32(targetX, targetY, miniW, miniH));
+            ApplyMiniAlwaysOnTop();
+        }
+        else
+        {
+            _isMiniPlayerMode = false;
+            if (_appWindow.Presenter is OverlappedPresenter presenter)
+            {
+                presenter.IsAlwaysOnTop = false;
+            }
+
+            NavBarRow.Height = new GridLength(52);
+            NavBarBorder.Visibility = Visibility.Visible;
+
+            if (_preMiniSize.Width > 0 && _preMiniSize.Height > 0)
+            {
+                _appWindow.MoveAndResize(new RectInt32(
+                    _preMiniPosition.X,
+                    _preMiniPosition.Y,
+                    _preMiniSize.Width,
+                    _preMiniSize.Height));
+            }
+
+            if (_preMiniMaximized && _appWindow.Presenter is OverlappedPresenter p)
+            {
+                p.Maximize();
+            }
+
+            NavigateTo(_activeNavId);
+        }
+    }
+
+    public void ApplyMiniAlwaysOnTop()
+    {
+        if (_appWindow?.Presenter is OverlappedPresenter presenter)
+        {
+            presenter.IsAlwaysOnTop = _isMiniPlayerMode &&
+                                      _settings.GetOption(RadioModule.MiniAlwaysOnTopOptionKey, true);
+        }
+    }
+
+    public void ToggleVisibilityFromHotkey()
+    {
+        if (_isCollapsedToTray || _appWindow is { IsVisible: false })
+        {
+            RestoreFromTrayOrActivate();
+        }
+        else
+        {
+            CollapseToTray(showNotification: false);
+        }
+    }
+
     public void CollapseToTray(bool showNotification)
     {
         if (_isCollapsedToTray)
@@ -192,7 +299,16 @@ public sealed partial class MainWindow : Window
             _appWindow.Show();
         }
 
-        NavigateTo(_activeNavId);
+        if (_isMiniPlayerMode)
+        {
+            ContentHost.Content = new MiniPlayerView();
+            ApplyMiniAlwaysOnTop();
+        }
+        else
+        {
+            NavigateTo(_activeNavId);
+        }
+
         Activate();
     }
 
@@ -304,6 +420,18 @@ public sealed partial class MainWindow : Window
         };
         RootGrid.KeyboardAccelerators.Add(f1);
 
+        var mini = new KeyboardAccelerator
+        {
+            Modifiers = VirtualKeyModifiers.Control,
+            Key = VirtualKey.M
+        };
+        mini.Invoked += (_, e) =>
+        {
+            ToggleMiniPlayer();
+            e.Handled = true;
+        };
+        RootGrid.KeyboardAccelerators.Add(mini);
+
         foreach (var item in _navRegistry.GetItems())
         {
             if (item.AcceleratorKey == VirtualKey.None)
@@ -413,9 +541,12 @@ public sealed partial class MainWindow : Window
             var dpi = GetDpiForWindow(hwnd);
             var scale = dpi > 0 ? dpi / 96.0 : 1.0;
 
+            var minW = _isMiniPlayerMode ? MiniMinLogicalWidth : MinLogicalWidth;
+            var minH = _isMiniPlayerMode ? MiniMinLogicalHeight : MinLogicalHeight;
+
             var mmi = Marshal.PtrToStructure<MINMAXINFO>(lParam);
-            mmi.ptMinTrackSize.X = (int)Math.Ceiling(MinLogicalWidth * scale);
-            mmi.ptMinTrackSize.Y = (int)Math.Ceiling(MinLogicalHeight * scale);
+            mmi.ptMinTrackSize.X = (int)Math.Ceiling(minW * scale);
+            mmi.ptMinTrackSize.Y = (int)Math.Ceiling(minH * scale);
             Marshal.StructureToPtr(mmi, lParam, fDeleteOld: false);
             return IntPtr.Zero;
         }
@@ -492,7 +623,7 @@ public sealed partial class MainWindow : Window
 
         if (sender.Presenter is OverlappedPresenter presenter)
         {
-            if (presenter.State == OverlappedPresenterState.Restored)
+            if (!_isMiniPlayerMode && presenter.State == OverlappedPresenterState.Restored)
             {
                 var size = sender.Size;
                 if (size.Width > 0 && size.Height > 0)
@@ -518,13 +649,22 @@ public sealed partial class MainWindow : Window
             _appWindow.Changed -= OnAppWindowChanged;
             _appWindow.Closing -= OnAppWindowClosing;
 
-            var isMaximized = _appWindow.Presenter is OverlappedPresenter presenter &&
-                              presenter.State == OverlappedPresenterState.Maximized;
-            if (!isMaximized &&
-                _appWindow.Presenter is OverlappedPresenter p &&
-                p.State == OverlappedPresenterState.Restored &&
-                _appWindow.Size.Width > 0 &&
-                _appWindow.Size.Height > 0)
+            var isMaximized = _isMiniPlayerMode
+                ? _preMiniMaximized
+                : _appWindow.Presenter is OverlappedPresenter presenter &&
+                  presenter.State == OverlappedPresenterState.Maximized;
+
+            if (_isMiniPlayerMode && _preMiniSize.Width > 0 && _preMiniSize.Height > 0)
+            {
+                _lastRestoredSize = _preMiniSize;
+                _lastRestoredPosition = _preMiniPosition;
+                _hasRestoredBounds = true;
+            }
+            else if (!isMaximized &&
+                     _appWindow.Presenter is OverlappedPresenter p &&
+                     p.State == OverlappedPresenterState.Restored &&
+                     _appWindow.Size.Width > 0 &&
+                     _appWindow.Size.Height > 0)
             {
                 _lastRestoredSize = _appWindow.Size;
                 _lastRestoredPosition = _appWindow.Position;

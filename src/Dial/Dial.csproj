@@ -16,10 +16,10 @@
     <SelfContained>true</SelfContained>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-    <RootNamespace>KinkRadio</RootNamespace>
-    <AssemblyName>KinkRadio</AssemblyName>
-    <Product>KINK Radio</Product>
-    <AssemblyTitle>KINK Radio</AssemblyTitle>
+    <RootNamespace>Dial</RootNamespace>
+    <AssemblyName>Dial</AssemblyName>
+    <Product>Dial</Product>
+    <AssemblyTitle>Dial</AssemblyTitle>
   </PropertyGroup>
 
   <ItemGroup>

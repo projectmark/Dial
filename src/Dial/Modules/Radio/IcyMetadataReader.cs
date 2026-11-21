@@ -1,7 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 
-namespace KinkRadio.Modules.Radio;
+namespace Dial.Modules.Radio;
 
 /// <summary>
 /// Reads inline ICY Shoutcast/Icecast metadata blocks from a live audio stream without interrupting playback.
@@ -158,7 +158,7 @@ public sealed class IcyMetadataReader : IIcyMetadataReader
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, streamUrl);
         request.Headers.TryAddWithoutValidation("Icy-MetaData", "1");
-        request.Headers.UserAgent.Add(new ProductInfoHeaderValue("KinkRadio", "0.1"));
+        request.Headers.UserAgent.Add(new ProductInfoHeaderValue("Dial", "0.2"));
 
         using var response = await _httpClient
             .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)

@@ -12,7 +12,7 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 
-namespace KinkRadio.Views;
+namespace Dial.Views;
 
 public sealed partial class SettingsView : UserControl
 {
