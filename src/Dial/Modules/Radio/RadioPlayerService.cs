@@ -65,6 +65,10 @@ public sealed class RadioPlayerService : IRadioPlayerService
     private bool _usingFallback;
     private long _playbackGeneration;
     private MediaSource? _currentSource;
+    private BufferedStreamProxy? _activeProxy;
+    private string? _activeUpstreamUrl;
+    private int _bufferSeconds;
+    private int _unexpectedEndRecoveryCount;
     private SystemMediaTransportControls? _smtc;
     private bool _disposed;
 
@@ -86,6 +90,9 @@ public sealed class RadioPlayerService : IRadioPlayerService
         _volume = Math.Clamp(_settings.GetOption(VolumeOptionKey, 0.8), 0.0, 1.0);
         _isMuted = _settings.GetOption(MuteOptionKey, false);
 
+        _bufferSeconds = AudioBufferSizing.NormalizeSeconds(
+            _settings.GetOption(AudioBufferSizing.OptionKey, AudioBufferSizing.DefaultBufferSeconds));
+
         _mediaPlayer = new MediaPlayer
         {
             AudioCategory = MediaPlayerAudioCategory.Media,
@@ -94,9 +101,13 @@ public sealed class RadioPlayerService : IRadioPlayerService
             IsMuted = _isMuted
         };
 
+        _settings.SettingsChanged += OnSettingsChanged;
         _mediaPlayer.MediaOpened += OnMediaOpened;
         _mediaPlayer.MediaFailed += OnMediaFailed;
+        _mediaPlayer.MediaEnded += OnMediaEnded;
         _mediaPlayer.PlaybackSession.PlaybackStateChanged += OnPlaybackStateChanged;
+        _mediaPlayer.PlaybackSession.BufferingStarted += OnBufferingStarted;
+        _mediaPlayer.PlaybackSession.BufferingEnded += OnBufferingEnded;
         _icyReader.NowPlayingChanged += OnNowPlayingChanged;
 
         ConfigureSmtc();
@@ -612,17 +623,88 @@ public sealed class RadioPlayerService : IRadioPlayerService
     }
 
     private void StartStream(string streamUrl, long expectedGeneration)
+        => _ = StartStreamAsync(streamUrl, expectedGeneration, isRecovery: false);
+
+    private async Task StartStreamAsync(string streamUrl, long expectedGeneration, bool isRecovery)
     {
+        int bufferSeconds;
         lock (_gate)
         {
             if (expectedGeneration != _playbackGeneration || _disposed)
             {
                 return;
             }
+
+            _activeUpstreamUrl = streamUrl;
+            if (!isRecovery)
+            {
+                _unexpectedEndRecoveryCount = 0;
+            }
+
+            bufferSeconds = _bufferSeconds;
         }
 
         _icyReader.Stop();
         DisposeCurrentSource();
+
+        if (!AudioBufferSizing.ShouldBypassProxy(streamUrl))
+        {
+            BufferedStreamProxy? proxy = null;
+            try
+            {
+                proxy = new BufferedStreamProxy(streamUrl, bufferSeconds);
+                var capturedProxy = proxy;
+                proxy.NowPlayingChanged += title => OnProxyNowPlayingChanged(capturedProxy, title);
+                proxy.UpstreamFailed += () => OnProxyUpstreamFailed(expectedGeneration);
+
+                var proxyResult = await proxy.StartAsync().ConfigureAwait(false);
+
+                lock (_gate)
+                {
+                    if (expectedGeneration != _playbackGeneration || _disposed)
+                    {
+                        proxy.Dispose();
+                        return;
+                    }
+                }
+
+                if (proxyResult.Status == BufferedProxyStartStatus.Started && proxyResult.LocalUri is not null)
+                {
+                    var bufferedSource = MediaSource.CreateFromUri(proxyResult.LocalUri);
+                    lock (_gate)
+                    {
+                        if (expectedGeneration != _playbackGeneration || _disposed)
+                        {
+                            bufferedSource.Dispose();
+                            proxy.Dispose();
+                            return;
+                        }
+
+                        _activeProxy = proxy;
+                        _currentSource = bufferedSource;
+                    }
+
+                    _mediaPlayer.Source = bufferedSource;
+                    _mediaPlayer.Play();
+                    return;
+                }
+
+                proxy.Dispose();
+                proxy = null;
+
+                if (proxyResult.Status == BufferedProxyStartStatus.Failed)
+                {
+                    HandlePlaybackError(expectedGeneration);
+                    return;
+                }
+            }
+            catch
+            {
+                proxy?.Dispose();
+                HandlePlaybackError(expectedGeneration);
+                return;
+            }
+        }
 
         try
         {
@@ -634,6 +716,7 @@ public sealed class RadioPlayerService : IRadioPlayerService
                     source.Dispose();
                     return;
                 }
+
                 _currentSource = source;
             }
 
@@ -644,6 +727,130 @@ public sealed class RadioPlayerService : IRadioPlayerService
         catch
         {
             HandlePlaybackError(expectedGeneration);
+        }
+    }
+
+    private void OnSettingsChanged(AppSettings _)
+    {
+        var configured = AudioBufferSizing.NormalizeSeconds(
+            _settings.GetOption(AudioBufferSizing.OptionKey, AudioBufferSizing.DefaultBufferSeconds));
+
+        BufferedStreamProxy? proxy;
+        lock (_gate)
+        {
+            if (configured == _bufferSeconds)
+            {
+                return;
+            }
+
+            _bufferSeconds = configured;
+            proxy = _activeProxy;
+        }
+
+        proxy?.UpdateBufferSeconds(configured);
+    }
+
+    private void OnProxyNowPlayingChanged(BufferedStreamProxy sourceProxy, string? title)
+    {
+        lock (_gate)
+        {
+            if (!ReferenceEquals(sourceProxy, _activeProxy))
+            {
+                return;
+            }
+        }
+
+        OnNowPlayingChanged(title);
+    }
+
+    private void OnProxyUpstreamFailed(long expectedGeneration)
+        => HandlePlaybackError(expectedGeneration);
+
+    private void OnMediaEnded(MediaPlayer sender, object args)
+    {
+        long gen;
+        string? url;
+        bool shouldRecover;
+        lock (_gate)
+        {
+            if (_disposed || _state == RadioPlaybackState.Stopped)
+            {
+                return;
+            }
+
+            gen = _playbackGeneration;
+            url = _activeUpstreamUrl;
+            if (!string.IsNullOrWhiteSpace(url) && _unexpectedEndRecoveryCount < 2)
+            {
+                _unexpectedEndRecoveryCount++;
+                _state = RadioPlaybackState.Buffering;
+                shouldRecover = true;
+            }
+            else
+            {
+                shouldRecover = false;
+            }
+        }
+
+        if (shouldRecover && url is not null)
+        {
+            NotifyStateChanged();
+            _ = RecoverUnexpectedEndAsync(url, gen);
+            return;
+        }
+
+        HandlePlaybackError(gen);
+    }
+
+    private async Task RecoverUnexpectedEndAsync(string url, long expectedGeneration)
+    {
+        try
+        {
+            await Task.Delay(400).ConfigureAwait(false);
+        }
+        catch
+        {
+            return;
+        }
+
+        await StartStreamAsync(url, expectedGeneration, isRecovery: true).ConfigureAwait(false);
+    }
+
+    private void OnBufferingStarted(MediaPlaybackSession sender, object args)
+    {
+        var changed = false;
+        lock (_gate)
+        {
+            if (_state == RadioPlaybackState.Playing)
+            {
+                _state = RadioPlaybackState.Buffering;
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            UpdateSmtcDisplay();
+            NotifyStateChanged();
+        }
+    }
+
+    private void OnBufferingEnded(MediaPlaybackSession sender, object args)
+    {
+        var changed = false;
+        lock (_gate)
+        {
+            if (_state == RadioPlaybackState.Buffering)
+            {
+                _state = RadioPlaybackState.Playing;
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            UpdateSmtcDisplay();
+            NotifyStateChanged();
         }
     }
 
@@ -849,14 +1056,18 @@ public sealed class RadioPlayerService : IRadioPlayerService
 
     private void DisposeCurrentSource()
     {
-        MediaSource? old;
+        MediaSource? oldSource;
+        BufferedStreamProxy? oldProxy;
         lock (_gate)
         {
-            old = _currentSource;
+            oldSource = _currentSource;
             _currentSource = null;
+            oldProxy = _activeProxy;
+            _activeProxy = null;
         }
 
-        old?.Dispose();
+        oldSource?.Dispose();
+        oldProxy?.Dispose();
     }
 
     private RadioStateSnapshot CreateSnapshotUnsafe()
@@ -873,6 +1084,7 @@ public sealed class RadioPlayerService : IRadioPlayerService
         }
 
         _disposed = true;
+        _settings.SettingsChanged -= OnSettingsChanged;
         _icyReader.NowPlayingChanged -= OnNowPlayingChanged;
         _icyReader.Dispose();
 
@@ -884,7 +1096,10 @@ public sealed class RadioPlayerService : IRadioPlayerService
 
         _mediaPlayer.MediaOpened -= OnMediaOpened;
         _mediaPlayer.MediaFailed -= OnMediaFailed;
+        _mediaPlayer.MediaEnded -= OnMediaEnded;
         _mediaPlayer.PlaybackSession.PlaybackStateChanged -= OnPlaybackStateChanged;
+        _mediaPlayer.PlaybackSession.BufferingStarted -= OnBufferingStarted;
+        _mediaPlayer.PlaybackSession.BufferingEnded -= OnBufferingEnded;
         _mediaPlayer.Pause();
         _mediaPlayer.Source = null;
         DisposeCurrentSource();

@@ -21,6 +21,7 @@ namespace Dial.Modules.Radio;
 public sealed class RadioModule : IChassisModule
 {
     public const string AutoplayOptionKey = "radio.autoplay_on_start";
+    public const string BufferSecondsOptionKey = AudioBufferSizing.OptionKey;
     public const string ViewModeOptionKey = "radio.view_mode";
     public const string ShowNumbersOptionKey = "radio.show_position_numbers";
     public const string AlignmentOptionKey = "radio.list_alignment";
@@ -221,6 +222,19 @@ public sealed class RadioModule : IChassisModule
             var autoplayToggle = new ToggleSwitch { OnContent = string.Empty, OffContent = string.Empty };
             var autoplayCard = new SettingsCard { Glyph = "\uE7F6", ActionContent = autoplayToggle };
 
+            var buffer2sItem = new ComboBoxItem { Tag = 2 };
+            var buffer5sItem = new ComboBoxItem { Tag = 5 };
+            var buffer10sItem = new ComboBoxItem { Tag = 10 };
+            var buffer15sItem = new ComboBoxItem { Tag = 15 };
+            var buffer30sItem = new ComboBoxItem { Tag = 30 };
+            var bufferCombo = new ComboBox { MinWidth = 210 };
+            bufferCombo.Items.Add(buffer2sItem);
+            bufferCombo.Items.Add(buffer5sItem);
+            bufferCombo.Items.Add(buffer10sItem);
+            bufferCombo.Items.Add(buffer15sItem);
+            bufferCombo.Items.Add(buffer30sItem);
+            var bufferCard = new SettingsCard { Glyph = "\uE896", ActionContent = bufferCombo };
+
             var viewModeListItem = new ComboBoxItem { Tag = "list" };
             var viewModeGridItem = new ComboBoxItem { Tag = "grid" };
             var viewModeCombo = new ComboBox { MinWidth = 170 };
@@ -256,6 +270,18 @@ public sealed class RadioModule : IChassisModule
             {
                 isSyncing = true;
                 autoplayToggle.IsOn = settings.GetOption(AutoplayOptionKey, false);
+
+                var configuredBuffer = AudioBufferSizing.NormalizeSeconds(
+                    settings.GetOption(BufferSecondsOptionKey, AudioBufferSizing.DefaultBufferSeconds));
+                bufferCombo.SelectedIndex = configuredBuffer switch
+                {
+                    <= 2 => 0,
+                    <= 5 => 1,
+                    <= 10 => 2,
+                    <= 15 => 3,
+                    _ => 4
+                };
+
                 numbersToggle.IsOn = settings.GetOption(ShowNumbersOptionKey, true);
                 hotkeysToggle.IsOn = settings.Current.GlobalHotkeysEnabled;
 
@@ -282,6 +308,13 @@ public sealed class RadioModule : IChassisModule
             autoplayToggle.Toggled += (_, _) =>
             {
                 if (!isSyncing) settings.SetOption(AutoplayOptionKey, autoplayToggle.IsOn);
+            };
+            bufferCombo.SelectionChanged += (_, _) =>
+            {
+                if (!isSyncing && bufferCombo.SelectedItem is ComboBoxItem item && item.Tag is int seconds)
+                {
+                    settings.SetOption(BufferSecondsOptionKey, seconds);
+                }
             };
             numbersToggle.Toggled += (_, _) =>
             {
@@ -322,6 +355,15 @@ public sealed class RadioModule : IChassisModule
                 autoplayCard.Description = localization["Radio.Settings.Autoplay.Desc"];
                 AutomationProperties.SetName(autoplayToggle, localization["Radio.Settings.Autoplay.Title"]);
 
+                bufferCard.Title = localization["Radio.Settings.Buffer.Title"];
+                bufferCard.Description = localization["Radio.Settings.Buffer.Desc"];
+                buffer2sItem.Content = localization["Radio.Settings.Buffer.2s"];
+                buffer5sItem.Content = localization["Radio.Settings.Buffer.5s"];
+                buffer10sItem.Content = localization["Radio.Settings.Buffer.10s"];
+                buffer15sItem.Content = localization["Radio.Settings.Buffer.15s"];
+                buffer30sItem.Content = localization["Radio.Settings.Buffer.30s"];
+                AutomationProperties.SetName(bufferCombo, localization["Radio.Settings.Buffer.Title"]);
+
                 viewModeCard.Title = localization["Radio.Settings.ViewMode.Title"];
                 viewModeCard.Description = localization["Radio.Settings.ViewMode.Desc"];
                 viewModeListItem.Content = localization["Radio.Settings.ViewMode.List"];
@@ -358,6 +400,7 @@ public sealed class RadioModule : IChassisModule
             var panel = new StackPanel { Spacing = 10 };
             panel.Children.Add(heading);
             panel.Children.Add(autoplayCard);
+            panel.Children.Add(bufferCard);
             panel.Children.Add(viewModeCard);
             panel.Children.Add(numbersCard);
             panel.Children.Add(alignCard);

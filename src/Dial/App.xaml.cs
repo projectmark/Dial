@@ -243,9 +243,18 @@ public sealed partial class App : Application
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
-                new ChangelogChange("Changed", "Changelog.v027.TrueStickyEditToolbar")
+                new ChangelogChange("Added", "Changelog.v028.BufferedStreamEngine")
             },
             IsLatest: true));
+
+        changelog.RegisterRelease(new ChangelogRelease(
+            Version: "0.2.7",
+            ReleaseDate: new DateTime(2026, 11, 21),
+            Changes: new ChangelogChange[]
+            {
+                new ChangelogChange("Changed", "Changelog.v027.TrueStickyEditToolbar")
+            },
+            IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
             Version: "0.2.6",

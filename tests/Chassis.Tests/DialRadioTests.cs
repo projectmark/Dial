@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text;
 using Chassis.Core.Data;
 using Chassis.Core.Paths;
 using Dial.Modules.Radio;
@@ -278,5 +280,145 @@ public sealed class DialRadioTests : IDisposable
         // Guard: attempting to remove all items leaves list untouched (>=1 must remain)
         var guardAll = StationListOperations.RemoveStations(items, ["A", "B", "C", "D", "E"]);
         Assert.Equal(5, guardAll.Count);
+    }
+
+    [Fact]
+    public void AudioBufferSizing_ScalesWithSecondsAndBitrate()
+    {
+        Assert.Equal(192, AudioBufferSizing.EstimateBitrateKbps(null));
+        Assert.Equal(128, AudioBufferSizing.EstimateBitrateKbps("128, 128"));
+        Assert.Equal(1411, AudioBufferSizing.EstimateBitrateKbps("9999"));
+
+        var cap5s = AudioBufferSizing.CalculateCapacityBytes(5, 192);
+        var cap30s = AudioBufferSizing.CalculateCapacityBytes(30, 192);
+        Assert.Equal(120_000, cap5s);
+        Assert.Equal(720_000, cap30s);
+
+        Assert.True(AudioBufferSizing.ShouldBypassProxy("https://example.invalid/live/master.m3u8"));
+        Assert.False(AudioBufferSizing.ShouldBypassProxy("https://playerservices.streamtheworld.com/api/livestream-redirect/KINKAAC.aac"));
+    }
+
+    [Fact]
+    public void IcyStreamDemuxer_StripsMetadataAcrossChunkBoundariesWithoutAudioLoss()
+    {
+        const int metaInterval = 16;
+        var audioA = "0123456789ABCDEF"u8.ToArray();
+        var audioB = "ghijklmnopqrstuv"u8.ToArray();
+        var metaPayload = Encoding.UTF8.GetBytes("StreamTitle='De Staat - Kitty';");
+        var metaUnits = (int)Math.Ceiling(metaPayload.Length / 16.0);
+        var paddedMeta = new byte[metaUnits * 16];
+        Array.Copy(metaPayload, paddedMeta, metaPayload.Length);
+
+        var combined = new List<byte>();
+        combined.AddRange(audioA);
+        combined.Add((byte)metaUnits);
+        combined.AddRange(paddedMeta);
+        combined.AddRange(audioB);
+        combined.Add(0); // zero-length ICY heartbeat block
+
+        var demuxer = new IcyStreamDemuxer(metaInterval);
+        var extractedAudio = new List<byte>();
+        var scratch = new byte[64];
+        string? detectedTitle = null;
+
+        // Feed irregular 5-byte TCP chunks to verify split-boundary handling
+        for (var i = 0; i < combined.Count; i += 5)
+        {
+            var chunkLen = Math.Min(5, combined.Count - i);
+            var span = combined.GetRange(i, chunkLen).ToArray();
+            var written = demuxer.Process(span, scratch, title => detectedTitle = title);
+            if (written > 0)
+            {
+                extractedAudio.AddRange(scratch[..written]);
+            }
+        }
+
+        Assert.Equal("De Staat - Kitty", detectedTitle);
+        Assert.Equal("0123456789ABCDEFghijklmnopqrstuv", Encoding.ASCII.GetString(extractedAudio.ToArray()));
+    }
+
+    [Fact]
+    public async Task AudioRingBuffer_SupportsLiveCapacityExpansionWithoutDroppingData()
+    {
+        var ring = new AudioRingBuffer(16_384);
+        var first = Enumerable.Range(0, 12_000).Select(i => (byte)(i & 0xFF)).ToArray();
+        var second = Enumerable.Range(0, 10_000).Select(i => (byte)((i + 17) & 0xFF)).ToArray();
+
+        await ring.WriteAsync(first, CancellationToken.None);
+        ring.SetCapacity(32_768);
+        await ring.WriteAsync(second, CancellationToken.None);
+        ring.Complete();
+
+        var drained = new MemoryStream();
+        var buf = new byte[2048];
+        while (true)
+        {
+            var n = await ring.ReadAsync(buf, CancellationToken.None);
+            if (n == 0) break;
+            drained.Write(buf, 0, n);
+        }
+
+        Assert.Equal(first.Concat(second).ToArray(), drained.ToArray());
+    }
+
+    [Fact]
+    public async Task BufferedStreamProxy_DemuxesIcyAndServesCleanHttpOverLoopback()
+    {
+        const int metaInterval = 32;
+        var audioPart1 = Enumerable.Repeat((byte)'A', 32).ToArray();
+        var audioPart2 = Enumerable.Repeat((byte)'B', 32).ToArray();
+        var metaBytes = new byte[32];
+        Encoding.UTF8.GetBytes("StreamTitle='KINK - Test Track';").CopyTo(metaBytes, 0);
+
+        var rawStreamBytes = new MemoryStream();
+        rawStreamBytes.Write(audioPart1);
+        rawStreamBytes.WriteByte(2); // 2 * 16 = 32 metadata bytes
+        rawStreamBytes.Write(metaBytes);
+        rawStreamBytes.Write(audioPart2);
+        var payloadBytes = rawStreamBytes.ToArray();
+
+        using var fakeUpstreamClient = new HttpClient(new StubStreamHandler(payloadBytes, metaInterval));
+        using var proxy = new BufferedStreamProxy("https://radio.example.invalid/stream.mp3", 10, fakeUpstreamClient);
+
+        string? receivedTitle = null;
+        proxy.NowPlayingChanged += t => receivedTitle = t;
+
+        var result = await proxy.StartAsync();
+        Assert.Equal(BufferedProxyStartStatus.Started, result.Status);
+        Assert.NotNull(result.LocalUri);
+        Assert.Equal("127.0.0.1", result.LocalUri!.Host);
+
+        using var playerClient = new HttpClient();
+
+        // HEAD probe must succeed without draining any buffered audio bytes
+        using var headResp = await playerClient.SendAsync(new HttpRequestMessage(HttpMethod.Head, result.LocalUri));
+        Assert.Equal(HttpStatusCode.OK, headResp.StatusCode);
+
+        // GET stream receives exact clean audio frames stripped of ICY metadata
+        var streamedAudio = await playerClient.GetByteArrayAsync(result.LocalUri);
+        Assert.Equal(audioPart1.Concat(audioPart2).ToArray(), streamedAudio);
+        Assert.Equal("KINK - Test Track", receivedTitle);
+    }
+
+    private sealed class StubStreamHandler(byte[] payload, int metaInterval) : HttpMessageHandler
+    {
+        private int _calls;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref _calls) > 1)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Gone));
+            }
+
+            var resp = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(payload)
+            };
+            resp.Content.Headers.TryAddWithoutValidation("Content-Type", "audio/mpeg");
+            resp.Headers.TryAddWithoutValidation("icy-br", "192");
+            resp.Headers.TryAddWithoutValidation("icy-metaint", metaInterval.ToString());
+            return Task.FromResult(resp);
+        }
     }
 }
