@@ -1,0 +1,186 @@
+<UserControl
+    x:Class="KinkRadio.Views.SettingsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Chassis.UI.Controls">
+
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+        <Grid Padding="24">
+            <StackPanel MaxWidth="1000" HorizontalAlignment="Stretch" Spacing="20">
+                <Grid x:Name="SettingsHeaderGrid" ColumnSpacing="12" RowSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Grid.Column="0" Spacing="4">
+                        <TextBlock x:Name="HeaderTitle" FontSize="24" FontWeight="SemiBold" />
+                        <TextBlock x:Name="HeaderSubtitle" FontSize="13" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <StackPanel
+                        x:Name="CategoryPillsPanel"
+                        Grid.Row="0"
+                        Grid.Column="1"
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        VerticalAlignment="Center" />
+
+                    <ComboBox
+                        x:Name="CategoryCombo"
+                        Grid.Row="1"
+                        Grid.Column="0"
+                        Grid.ColumnSpan="2"
+                        HorizontalAlignment="Stretch"
+                        Visibility="Collapsed"
+                        SelectionChanged="CategoryCombo_SelectionChanged" />
+                </Grid>
+
+                <!-- Appearance Section -->
+                <StackPanel x:Name="AppearanceSection" Spacing="10">
+                    <TextBlock x:Name="AppearanceHeading" FontSize="15" FontWeight="SemiBold" />
+
+                    <controls:SettingsCard x:Name="ThemeCard" Glyph="&#xE790;">
+                        <controls:SettingsCard.ActionContent>
+                            <ComboBox
+                                x:Name="ThemeCombo"
+                                MinWidth="170"
+                                SelectionChanged="ThemeCombo_SelectionChanged">
+                                <ComboBoxItem x:Name="ThemeSystemItem" Tag="System" />
+                                <ComboBoxItem x:Name="ThemeLightItem" Tag="Light" />
+                                <ComboBoxItem x:Name="ThemeDarkItem" Tag="Dark" />
+                            </ComboBox>
+                        </controls:SettingsCard.ActionContent>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard x:Name="SystemAccentCard" Glyph="&#xE771;">
+                        <controls:SettingsCard.ActionContent>
+                            <ToggleSwitch
+                                x:Name="SystemAccentToggle"
+                                OnContent=""
+                                OffContent=""
+                                Toggled="SystemAccentToggle_Toggled" />
+                        </controls:SettingsCard.ActionContent>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard x:Name="AccentSwatchesCard" Glyph="&#xE790;">
+                        <controls:SettingsCard.ActionContent>
+                            <StackPanel x:Name="SwatchesPanel" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" />
+                        </controls:SettingsCard.ActionContent>
+                    </controls:SettingsCard>
+                </StackPanel>
+
+                <!-- System Tray & Background Section -->
+                <StackPanel x:Name="BackgroundSection" Spacing="10">
+                    <TextBlock x:Name="BackgroundHeading" FontSize="15" FontWeight="SemiBold" />
+
+                    <controls:SettingsCard x:Name="CloseToTrayCard" Glyph="&#xE921;">
+                        <controls:SettingsCard.ActionContent>
+                            <ToggleSwitch
+                                x:Name="CloseToTrayToggle"
+                                OnContent=""
+                                OffContent=""
+                                Toggled="CloseToTrayToggle_Toggled" />
+                        </controls:SettingsCard.ActionContent>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard x:Name="MinimizeToTrayCard" Glyph="&#xE921;">
+                        <controls:SettingsCard.ActionContent>
+                            <ToggleSwitch
+                                x:Name="MinimizeToTrayToggle"
+                                OnContent=""
+                                OffContent=""
+                                Toggled="MinimizeToTrayToggle_Toggled" />
+                        </controls:SettingsCard.ActionContent>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard x:Name="StartMinimizedCard" Glyph="&#xE7B5;">
+                        <controls:SettingsCard.ActionContent>
+                            <ToggleSwitch
+                                x:Name="StartMinimizedToggle"
+                                OnContent=""
+                                OffContent=""
+                                Toggled="StartMinimizedToggle_Toggled" />
+                        </controls:SettingsCard.ActionContent>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard x:Name="TrayNotificationsCard" Glyph="&#xEA8F;">
+                        <controls:SettingsCard.ActionContent>
+                            <ToggleSwitch
+                                x:Name="TrayNotificationsToggle"
+                                OnContent=""
+                                OffContent=""
+                                Toggled="TrayNotificationsToggle_Toggled" />
+                        </controls:SettingsCard.ActionContent>
+                    </controls:SettingsCard>
+                </StackPanel>
+
+                <!-- Dynamic Module Settings Host -->
+                <StackPanel x:Name="ModuleSectionsHost" Spacing="12" />
+
+                <!-- Language Section -->
+                <StackPanel x:Name="LanguageSection" Spacing="10">
+                    <TextBlock x:Name="LanguageHeading" FontSize="15" FontWeight="SemiBold" />
+
+                    <controls:SettingsCard x:Name="LanguageCard" Glyph="&#xE774;">
+                        <controls:SettingsCard.ActionContent>
+                            <ComboBox
+                                x:Name="LanguageCombo"
+                                MinWidth="220"
+                                SelectionChanged="LanguageCombo_SelectionChanged" />
+                        </controls:SettingsCard.ActionContent>
+                    </controls:SettingsCard>
+                </StackPanel>
+
+                <!-- Storage & Updates Section -->
+                <StackPanel x:Name="StorageUpdatesSection" Spacing="10">
+                    <TextBlock x:Name="StorageUpdatesHeading" FontSize="15" FontWeight="SemiBold" />
+
+                    <controls:SettingsCard x:Name="AppDataCard" Glyph="&#xE8B7;">
+                        <controls:SettingsCard.ActionContent>
+                            <Button
+                                x:Name="OpenAppDataBtn"
+                                Height="34"
+                                Padding="14,6"
+                                CornerRadius="6"
+                                Click="OpenAppDataBtn_Click" />
+                        </controls:SettingsCard.ActionContent>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard x:Name="LogsCard" Glyph="&#xE9F9;">
+                        <controls:SettingsCard.ActionContent>
+                            <Button
+                                x:Name="OpenLogsBtn"
+                                Height="34"
+                                Padding="14,6"
+                                CornerRadius="6"
+                                Click="OpenLogsBtn_Click" />
+                        </controls:SettingsCard.ActionContent>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard x:Name="UpdatesCard" Glyph="&#xE895;">
+                        <controls:SettingsCard.ActionContent>
+                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                <TextBlock
+                                    x:Name="UpdateStatusText"
+                                    FontSize="12"
+                                    VerticalAlignment="Center"
+                                    Visibility="Collapsed" />
+                                <Button
+                                    x:Name="CheckUpdatesBtn"
+                                    Height="34"
+                                    Padding="14,6"
+                                    CornerRadius="6"
+                                    Click="CheckUpdatesBtn_Click" />
+                            </StackPanel>
+                        </controls:SettingsCard.ActionContent>
+                    </controls:SettingsCard>
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

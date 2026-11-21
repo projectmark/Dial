@@ -1,0 +1,20 @@
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+
+    <Version Condition="'$(Version)' == ''">0.1.0</Version>
+    <InformationalVersion Condition="'$(InformationalVersion)' == ''">$(Version)</InformationalVersion>
+    <WindowsAppSDKVersion Condition="'$(WindowsAppSDKVersion)' == ''">1.6.250205002</WindowsAppSDKVersion>
+    <WindowsSDKBuildToolsVersion Condition="'$(WindowsSDKBuildToolsVersion)' == ''">10.0.26100.1742</WindowsSDKBuildToolsVersion>
+    <MicrosoftExtensionsVersion Condition="'$(MicrosoftExtensionsVersion)' == ''">10.0.0</MicrosoftExtensionsVersion>
+
+    <AppxMSBuildToolsPath>$(MSBuildThisFileDirectory)tools\AppxShim\bin\Release\net10.0\</AppxMSBuildToolsPath>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="Exists('$(AppxMSBuildToolsPath)Microsoft.Build.AppxPackage.dll')">
+    <PriProjTaskAssembly>$(AppxMSBuildToolsPath)Microsoft.Build.Packaging.Pri.Tasks.dll</PriProjTaskAssembly>
+    <AppxMSBuildTaskAssembly>$(AppxMSBuildToolsPath)Microsoft.Build.AppxPackage.dll</AppxMSBuildTaskAssembly>
+  </PropertyGroup>
+</Project>

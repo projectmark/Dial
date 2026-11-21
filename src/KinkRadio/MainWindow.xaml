@@ -1,0 +1,53 @@
+<Window
+    x:Class="KinkRadio.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Chassis.UI.Controls">
+
+    <Grid
+        x:Name="RootGrid"
+        Background="Transparent">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="40" />
+            <RowDefinition Height="52" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <controls:ChassisTitleBar
+            x:Name="TitleBarControl"
+            Grid.Row="0" />
+
+        <Border
+            x:Name="NavBarBorder"
+            Grid.Row="1"
+            BorderThickness="0,0,0,1"
+            Padding="24,0">
+            <Grid MaxWidth="1000" HorizontalAlignment="Stretch">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel
+                    x:Name="LeftNavPanel"
+                    Grid.Column="0"
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    VerticalAlignment="Center" />
+
+                <StackPanel
+                    x:Name="RightNavPanel"
+                    Grid.Column="1"
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <ContentControl
+            x:Name="ContentHost"
+            Grid.Row="2"
+            HorizontalContentAlignment="Stretch"
+            VerticalContentAlignment="Stretch" />
+    </Grid>
+</Window>
