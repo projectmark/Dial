@@ -160,6 +160,7 @@
   "KB.Article.Storage.Title": "Isolated Storage & Single-Instance",
   "KB.Article.Storage.Summary": "Settings stored under %AppData%\\Dial with single-instance activation redirect.",
   "KB.Article.Storage.Body": "Favorites, listening statistics, and preferences persist atomically in %AppData%\\Dial\\. Launching Dial a second time brings the active instance back into focus.",
+  "Changelog.v025.MovedEditButton": "Moved the edit button and edit toolbar directly to the Favorites header for clearer separation from playback tools.",
   "Changelog.v024.AddedBulkSelectionAndDrag": "Added item checkboxes, Shift+click range selection, bulk delete, and multi-select drag-and-drop reordering in Edit mode.",
   "Changelog.v023.AddedRadiOhImportAndSmoothing": "Added Radi-oh! JSON backup import (customName & sorting preserved) with confirmation prompt to append favorites, plus 60fps VU meter smoothing.",
   "Changelog.v022.AddedMiniVuAndControls": "Upgraded the mini-player with a full-width transport and volume bar plus a live stereo L/R VU meter.",

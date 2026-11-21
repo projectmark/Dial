@@ -160,6 +160,7 @@
   "KB.Article.Storage.Title": "Lokale Opslag & Single-Instance",
   "KB.Article.Storage.Summary": "Geïsoleerde instellingen in %AppData%\\Dial en bescherming tegen dubbele vensters.",
   "KB.Article.Storage.Body": "Favorieten, luisterstatistieken en voorkeuren worden atomisch opgeslagen onder %AppData%\\Dial\\. Een tweede start brengt automatisch het actieve venster naar voren.",
+  "Changelog.v025.MovedEditButton": "Bewerkknop en bewerkbalk verplaatst naar de kop van Favorieten voor een duidelijkere scheiding met de speleracties.",
   "Changelog.v024.AddedBulkSelectionAndDrag": "Selectievakjes, Shift+klik bereikselectie, bulk verwijderen en multi-select drag-and-drop herordening toegevoegd aan de bewerkmodus.",
   "Changelog.v023.AddedRadiOhImportAndSmoothing": "Import van Radi-oh! JSON-backups (incl. customName & sortering) toegevoegd met bevestigingsprompt vóór het aanvullen van favorieten, en VU-meter voorzien van 60fps smoothing.",
   "Changelog.v022.AddedMiniVuAndControls": "Mini-speler voorzien van een vullende bedieningsbalk met volumeregelaar en een live stereo L/R VU-meter.",
