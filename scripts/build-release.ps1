@@ -62,7 +62,7 @@ Write-Host " Versie     : v$FullInfoVersion" -ForegroundColor Cyan
 Write-Host "=============================================" -ForegroundColor Cyan
 
 $ReleasesDir = Join-Path $RootDir "releases"
-$VersionDir = Join-Path $ReleasesDir "v$Version"
+$VersionDir = Join-Path $ReleasesDir "v$FullInfoVersion"
 $LatestDir = Join-Path $ReleasesDir "latest"
 $TempPublishDir = Join-Path $RootDir "temp_publish"
 
@@ -132,7 +132,7 @@ $releaseManifest = [ordered]@{
     appBinary    = "$AppName.exe"
     fileSizeMb   = $exeSizeMb
     sha256       = $hash
-    downloadUrl  = "releases/v$Version/$ReleaseExeName"
+    downloadUrl  = "releases/v$FullInfoVersion/$ReleaseExeName"
     mandatory    = $false
 }
 

@@ -266,12 +266,21 @@ public sealed partial class App : Application
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
-                new ChangelogChange("Changed", "Changelog.v032.UpdatedKnowledgeBase")
+                new ChangelogChange("Added", "Changelog.v010Alpha.Milestone")
             },
             IsLatest: true));
 
         changelog.RegisterRelease(new ChangelogRelease(
-            Version: "0.3.1",
+            Version: "0.3.2 (testing)",
+            ReleaseDate: new DateTime(2026, 11, 21),
+            Changes: new ChangelogChange[]
+            {
+                new ChangelogChange("Changed", "Changelog.v032.UpdatedKnowledgeBase")
+            },
+            IsLatest: false));
+
+        changelog.RegisterRelease(new ChangelogRelease(
+            Version: "0.3.1 (testing)",
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
@@ -280,7 +289,7 @@ public sealed partial class App : Application
             IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
-            Version: "0.3.0",
+            Version: "0.3.0 (testing)",
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
@@ -291,7 +300,7 @@ public sealed partial class App : Application
             IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
-            Version: "0.2.9",
+            Version: "0.2.9 (testing)",
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
@@ -300,7 +309,7 @@ public sealed partial class App : Application
             IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
-            Version: "0.2.8",
+            Version: "0.2.8 (testing)",
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
@@ -309,7 +318,7 @@ public sealed partial class App : Application
             IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
-            Version: "0.2.7",
+            Version: "0.2.7 (testing)",
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
@@ -318,7 +327,7 @@ public sealed partial class App : Application
             IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
-            Version: "0.2.6",
+            Version: "0.2.6 (testing)",
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
@@ -327,7 +336,7 @@ public sealed partial class App : Application
             IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
-            Version: "0.2.5",
+            Version: "0.2.5 (testing)",
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
@@ -336,7 +345,7 @@ public sealed partial class App : Application
             IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
-            Version: "0.2.4",
+            Version: "0.2.4 (testing)",
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
@@ -345,7 +354,7 @@ public sealed partial class App : Application
             IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
-            Version: "0.2.3",
+            Version: "0.2.3 (testing)",
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
@@ -354,7 +363,7 @@ public sealed partial class App : Application
             IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
-            Version: "0.2.2",
+            Version: "0.2.2 (testing)",
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
@@ -363,7 +372,7 @@ public sealed partial class App : Application
             IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
-            Version: "0.2.1",
+            Version: "0.2.1 (testing)",
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
@@ -372,7 +381,7 @@ public sealed partial class App : Application
             IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
-            Version: "0.2.0",
+            Version: "0.2.0 (testing)",
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
@@ -384,7 +393,7 @@ public sealed partial class App : Application
             IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
-            Version: "0.1.0",
+            Version: "0.1.0 (testing)",
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
