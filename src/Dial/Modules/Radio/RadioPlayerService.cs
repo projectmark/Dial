@@ -65,9 +65,10 @@ public sealed class RadioPlayerService : IRadioPlayerService
     private bool _usingFallback;
     private long _playbackGeneration;
     private MediaSource? _currentSource;
-    private BufferedStreamProxy? _activeProxy;
+    private BufferedFrameMediaSource? _activeFeed;
     private string? _activeUpstreamUrl;
     private int _bufferSeconds;
+    private double _bufferedSeconds;
     private int _unexpectedEndRecoveryCount;
     private SystemMediaTransportControls? _smtc;
     private bool _disposed;
@@ -649,50 +650,73 @@ public sealed class RadioPlayerService : IRadioPlayerService
 
         if (!AudioBufferSizing.ShouldBypassProxy(streamUrl))
         {
-            BufferedStreamProxy? proxy = null;
+            BufferedFrameMediaSource? feed = null;
             try
             {
-                proxy = new BufferedStreamProxy(streamUrl, bufferSeconds);
-                var capturedProxy = proxy;
-                proxy.NowPlayingChanged += title => OnProxyNowPlayingChanged(capturedProxy, title);
-                proxy.UpstreamFailed += () => OnProxyUpstreamFailed(expectedGeneration);
-
-                var proxyResult = await proxy.StartAsync().ConfigureAwait(false);
+                feed = new BufferedFrameMediaSource(streamUrl, bufferSeconds);
+                var capturedFeed = feed;
+                feed.NowPlayingChanged += title => OnFeedNowPlayingChanged(capturedFeed, title);
+                feed.BufferingStateChanged += isBuf => OnFeedBufferingChanged(capturedFeed, isBuf);
+                feed.BufferLevelChanged += (buffered, target) => OnFeedBufferLevelChanged(capturedFeed, buffered, target);
+                feed.UpstreamFailed += () => OnFeedUpstreamFailed(expectedGeneration);
 
                 lock (_gate)
                 {
                     if (expectedGeneration != _playbackGeneration || _disposed)
                     {
-                        proxy.Dispose();
+                        feed.Dispose();
+                        return;
+                    }
+
+                    _activeFeed = feed;
+                }
+
+                var startResult = await feed.StartAsync().ConfigureAwait(false);
+
+                lock (_gate)
+                {
+                    if (expectedGeneration != _playbackGeneration || _disposed || !ReferenceEquals(_activeFeed, feed))
+                    {
+                        startResult.Source?.Dispose();
+                        feed.Dispose();
                         return;
                     }
                 }
 
-                if (proxyResult.Status == BufferedProxyStartStatus.Started && proxyResult.LocalUri is not null)
+                if (startResult.Status == BufferedMediaStartStatus.Started && startResult.Source is not null)
                 {
-                    var bufferedSource = MediaSource.CreateFromUri(proxyResult.LocalUri);
                     lock (_gate)
                     {
-                        if (expectedGeneration != _playbackGeneration || _disposed)
+                        if (expectedGeneration != _playbackGeneration || _disposed || !ReferenceEquals(_activeFeed, feed))
                         {
-                            bufferedSource.Dispose();
-                            proxy.Dispose();
+                            startResult.Source.Dispose();
+                            feed.Dispose();
                             return;
                         }
 
-                        _activeProxy = proxy;
-                        _currentSource = bufferedSource;
+                        _currentSource = startResult.Source;
+                        _bufferedSeconds = startResult.BufferedSeconds;
                     }
 
-                    _mediaPlayer.Source = bufferedSource;
+                    _mediaPlayer.Source = startResult.Source;
                     _mediaPlayer.Play();
+                    NotifyStateChanged();
                     return;
                 }
 
-                proxy.Dispose();
-                proxy = null;
+                lock (_gate)
+                {
+                    if (ReferenceEquals(_activeFeed, feed))
+                    {
+                        _activeFeed = null;
+                    }
+                }
 
-                if (proxyResult.Status == BufferedProxyStartStatus.Failed)
+                startResult.Source?.Dispose();
+                feed.Dispose();
+                feed = null;
+
+                if (startResult.Status == BufferedMediaStartStatus.Failed)
                 {
                     HandlePlaybackError(expectedGeneration);
                     return;
@@ -700,7 +724,19 @@ public sealed class RadioPlayerService : IRadioPlayerService
             }
             catch
             {
-                proxy?.Dispose();
+                if (feed is not null)
+                {
+                    lock (_gate)
+                    {
+                        if (ReferenceEquals(_activeFeed, feed))
+                        {
+                            _activeFeed = null;
+                        }
+                    }
+
+                    feed.Dispose();
+                }
+
                 HandlePlaybackError(expectedGeneration);
                 return;
             }
@@ -735,7 +771,7 @@ public sealed class RadioPlayerService : IRadioPlayerService
         var configured = AudioBufferSizing.NormalizeSeconds(
             _settings.GetOption(AudioBufferSizing.OptionKey, AudioBufferSizing.DefaultBufferSeconds));
 
-        BufferedStreamProxy? proxy;
+        BufferedFrameMediaSource? feed;
         lock (_gate)
         {
             if (configured == _bufferSeconds)
@@ -744,17 +780,18 @@ public sealed class RadioPlayerService : IRadioPlayerService
             }
 
             _bufferSeconds = configured;
-            proxy = _activeProxy;
+            feed = _activeFeed;
         }
 
-        proxy?.UpdateBufferSeconds(configured);
+        feed?.UpdateBufferSeconds(configured);
+        NotifyStateChanged();
     }
 
-    private void OnProxyNowPlayingChanged(BufferedStreamProxy sourceProxy, string? title)
+    private void OnFeedNowPlayingChanged(BufferedFrameMediaSource sourceFeed, string? title)
     {
         lock (_gate)
         {
-            if (!ReferenceEquals(sourceProxy, _activeProxy))
+            if (!ReferenceEquals(sourceFeed, _activeFeed))
             {
                 return;
             }
@@ -763,7 +800,56 @@ public sealed class RadioPlayerService : IRadioPlayerService
         OnNowPlayingChanged(title);
     }
 
-    private void OnProxyUpstreamFailed(long expectedGeneration)
+    private void OnFeedBufferingChanged(BufferedFrameMediaSource sourceFeed, bool isBuffering)
+    {
+        var changed = false;
+        lock (_gate)
+        {
+            if (!ReferenceEquals(sourceFeed, _activeFeed) || _state == RadioPlaybackState.Stopped)
+            {
+                return;
+            }
+
+            var desired = isBuffering ? RadioPlaybackState.Buffering : RadioPlaybackState.Playing;
+            if (_state != desired)
+            {
+                _state = desired;
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            UpdateSmtcDisplay();
+            NotifyStateChanged();
+        }
+    }
+
+    private void OnFeedBufferLevelChanged(BufferedFrameMediaSource sourceFeed, double bufferedSeconds, int targetSeconds)
+    {
+        var shouldNotify = false;
+        lock (_gate)
+        {
+            if (!ReferenceEquals(sourceFeed, _activeFeed) || _state == RadioPlaybackState.Stopped)
+            {
+                return;
+            }
+
+            var delta = Math.Abs(bufferedSeconds - _bufferedSeconds);
+            if (_state == RadioPlaybackState.Buffering || delta >= 0.4 || (bufferedSeconds == 0 && _bufferedSeconds > 0))
+            {
+                _bufferedSeconds = bufferedSeconds;
+                shouldNotify = true;
+            }
+        }
+
+        if (shouldNotify)
+        {
+            NotifyStateChanged();
+        }
+    }
+
+    private void OnFeedUpstreamFailed(long expectedGeneration)
         => HandlePlaybackError(expectedGeneration);
 
     private void OnMediaEnded(MediaPlayer sender, object args)
@@ -913,30 +999,36 @@ public sealed class RadioPlayerService : IRadioPlayerService
         }
 
         _icyReader.Stop();
+        DisposeCurrentSource();
         UpdateSmtcDisplay();
         NotifyStateChanged();
     }
 
     private void OnPlaybackStateChanged(MediaPlaybackSession sender, object args)
     {
-        var mapped = sender.PlaybackState switch
+        RadioPlaybackState? mapped = sender.PlaybackState switch
         {
             MediaPlaybackState.Opening or MediaPlaybackState.Buffering => RadioPlaybackState.Buffering,
             MediaPlaybackState.Playing => RadioPlaybackState.Playing,
-            _ => RadioPlaybackState.Stopped
+            _ => null
         };
+
+        if (!mapped.HasValue)
+        {
+            return;
+        }
 
         var changed = false;
         lock (_gate)
         {
-            if (_state == RadioPlaybackState.Error && mapped == RadioPlaybackState.Stopped)
+            if (_state is RadioPlaybackState.Stopped or RadioPlaybackState.Error)
             {
                 return;
             }
 
-            if (_state != mapped)
+            if (_state != mapped.Value)
             {
-                _state = mapped;
+                _state = mapped.Value;
                 changed = true;
             }
         }
@@ -1057,21 +1149,22 @@ public sealed class RadioPlayerService : IRadioPlayerService
     private void DisposeCurrentSource()
     {
         MediaSource? oldSource;
-        BufferedStreamProxy? oldProxy;
+        BufferedFrameMediaSource? oldFeed;
         lock (_gate)
         {
             oldSource = _currentSource;
             _currentSource = null;
-            oldProxy = _activeProxy;
-            _activeProxy = null;
+            oldFeed = _activeFeed;
+            _activeFeed = null;
+            _bufferedSeconds = 0;
         }
 
         oldSource?.Dispose();
-        oldProxy?.Dispose();
+        oldFeed?.Dispose();
     }
 
     private RadioStateSnapshot CreateSnapshotUnsafe()
-        => new(_activeStation, _state, _nowPlaying, _volume, _isMuted, _errorMessage, _isPreview);
+        => new(_activeStation, _state, _nowPlaying, _volume, _isMuted, _errorMessage, _isPreview, _bufferedSeconds, _bufferSeconds);
 
     private void NotifyStateChanged()
         => StateChanged?.Invoke(Current);

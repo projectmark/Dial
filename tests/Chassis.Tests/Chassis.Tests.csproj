@@ -21,6 +21,7 @@
   <ItemGroup>
     <Compile Include="..\..\src\Dial\Modules\Radio\RadioModels.cs" Link="Radio\RadioModels.cs" />
     <Compile Include="..\..\src\Dial\Modules\Radio\IcyMetadataReader.cs" Link="Radio\IcyMetadataReader.cs" />
+    <Compile Include="..\..\src\Dial\Modules\Radio\AudioStreamFrameEngine.cs" Link="Radio\AudioStreamFrameEngine.cs" />
     <Compile Include="..\..\src\Dial\Modules\Radio\BufferedStreamProxy.cs" Link="Radio\BufferedStreamProxy.cs" />
     <Compile Include="..\..\src\Dial\Modules\Radio\AudioMeterService.cs" Link="Radio\AudioMeterService.cs" />
     <Compile Include="..\..\src\Dial\Modules\Radio\RadioBackupImporter.cs" Link="Radio\RadioBackupImporter.cs" />

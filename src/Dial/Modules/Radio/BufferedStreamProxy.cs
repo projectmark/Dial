@@ -51,9 +51,8 @@ public static class AudioBufferSizing
         var capacity = CalculateCapacityBytes(bufferSeconds, bitrateKbps);
         var clampedKbps = Math.Clamp(bitrateKbps, 32, 1411);
         var bytesPerSecond = Math.Max(4_000, clampedKbps * 1000 / 8);
-        var startupSeconds = Math.Clamp(NormalizeSeconds(bufferSeconds) * 0.25, 0.75, 2.5);
-        var desired = (int)(bytesPerSecond * startupSeconds);
-        return Math.Clamp(desired, 16_384, Math.Max(16_384, capacity / 2));
+        var desired = NormalizeSeconds(bufferSeconds) * bytesPerSecond;
+        return Math.Clamp(desired, 16_384, capacity);
     }
 
     public static bool ShouldBypassProxy(string? streamUrl)
@@ -540,6 +539,38 @@ public sealed class BufferedStreamProxy : IDisposable
         }
     }
 
+    internal BufferedProxyStartResult StartFromPreopened(
+        HttpResponseMessage openResponse,
+        Stream openBodyStream,
+        IcyStreamDemuxer activeDemuxer,
+        ReadOnlyMemory<byte> initialAudioPrefix,
+        string contentType,
+        int bitrateKbps,
+        int metaInt)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        _contentType = string.IsNullOrWhiteSpace(contentType) ? "audio/mpeg" : contentType;
+        _bitrateKbps = bitrateKbps > 0 ? bitrateKbps : AudioBufferSizing.DefaultBitrateKbps;
+        var capacity = AudioBufferSizing.CalculateCapacityBytes(_bufferSeconds, _bitrateKbps);
+        _initialPrebufferBytes = AudioBufferSizing.CalculateInitialPrebufferBytes(_bufferSeconds, _bitrateKbps);
+        _ringBuffer = new AudioRingBuffer(capacity);
+
+        _streamToken = Guid.NewGuid().ToString("N");
+        _listener = new TcpListener(IPAddress.Loopback, 0);
+        _listener.Start();
+
+        var port = ((IPEndPoint)_listener.LocalEndpoint).Port;
+        LocalUri = new Uri($"http://127.0.0.1:{port}/stream/{_streamToken}");
+
+        _ = Task.Run(
+            () => PumpUpstreamLoopAsync(openResponse, metaInt, initialAudioPrefix, openBodyStream, activeDemuxer),
+            CancellationToken.None);
+        _ = Task.Run(AcceptClientsLoopAsync, CancellationToken.None);
+
+        return new BufferedProxyStartResult(BufferedProxyStartStatus.Started, LocalUri, _bitrateKbps, _contentType);
+    }
+
     private Task<HttpResponseMessage> OpenUpstreamAsync(CancellationToken ct)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, _upstreamUrl);
@@ -548,20 +579,44 @@ public sealed class BufferedStreamProxy : IDisposable
         return _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
     }
 
-    private async Task PumpUpstreamLoopAsync(HttpResponseMessage firstResponse, int firstMetaInt)
+    private async Task PumpUpstreamLoopAsync(
+        HttpResponseMessage firstResponse,
+        int firstMetaInt,
+        ReadOnlyMemory<byte> initialAudioPrefix = default,
+        Stream? alreadyOpenedStream = null,
+        IcyStreamDemuxer? activeDemuxer = null)
     {
         var ring = _ringBuffer!;
         HttpResponseMessage? currentResponse = firstResponse;
         var currentMetaInt = firstMetaInt;
+        var pendingStream = alreadyOpenedStream;
+        var pendingDemuxer = activeDemuxer;
         var consecutiveFailures = 0;
         var readBuffer = new byte[ChunkSize];
         var audioBuffer = new byte[ChunkSize];
 
-        _ = Task.Delay(1500, _cts.Token).ContinueWith(
+        var prebufferTimeoutMs = Math.Max(4000, (_bufferSeconds * 1000) + 3000);
+        _ = Task.Delay(prebufferTimeoutMs, _cts.Token).ContinueWith(
             _ => _initialPrebufferReady.TrySetResult(true),
             CancellationToken.None,
             TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
+
+        if (!initialAudioPrefix.IsEmpty)
+        {
+            try
+            {
+                await ring.WriteAsync(initialAudioPrefix, _cts.Token).ConfigureAwait(false);
+                if (ring.Count >= _initialPrebufferBytes)
+                {
+                    _initialPrebufferReady.TrySetResult(true);
+                }
+            }
+            catch
+            {
+                // Handled by cancellation check below.
+            }
+        }
 
         try
         {
@@ -572,12 +627,15 @@ public sealed class BufferedStreamProxy : IDisposable
                 {
                     var activeResponse = currentResponse;
                     currentResponse = null;
+                    var preOpenedStream = pendingStream;
+                    pendingStream = null;
+                    var demuxer = pendingDemuxer ?? new IcyStreamDemuxer(currentMetaInt);
+                    pendingDemuxer = null;
                     try
                     {
                         using (activeResponse)
-                        await using (var stream = await activeResponse.Content.ReadAsStreamAsync(_cts.Token).ConfigureAwait(false))
+                        await using (var stream = preOpenedStream ?? await activeResponse.Content.ReadAsStreamAsync(_cts.Token).ConfigureAwait(false))
                         {
-                            var demuxer = new IcyStreamDemuxer(currentMetaInt);
                             while (!_cts.IsCancellationRequested)
                             {
                                 var bytesRead = await stream.ReadAsync(readBuffer.AsMemory(), _cts.Token).ConfigureAwait(false);

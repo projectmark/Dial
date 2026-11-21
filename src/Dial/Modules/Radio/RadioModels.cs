@@ -37,7 +37,9 @@ public sealed record RadioStateSnapshot(
     double Volume,
     bool IsMuted,
     string? ErrorMessage,
-    bool IsPreview = false);
+    bool IsPreview = false,
+    double BufferedSeconds = 0,
+    int TargetBufferSeconds = 5);
 
 /// <summary>
 /// Country entry returned by the global station directory.

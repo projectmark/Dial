@@ -293,6 +293,7 @@ public sealed class DialRadioTests : IDisposable
         var cap30s = AudioBufferSizing.CalculateCapacityBytes(30, 192);
         Assert.Equal(120_000, cap5s);
         Assert.Equal(720_000, cap30s);
+        Assert.True(AudioBufferSizing.CalculateInitialPrebufferBytes(15, 192) > AudioBufferSizing.CalculateInitialPrebufferBytes(5, 192));
 
         Assert.True(AudioBufferSizing.ShouldBypassProxy("https://example.invalid/live/master.m3u8"));
         Assert.False(AudioBufferSizing.ShouldBypassProxy("https://playerservices.streamtheworld.com/api/livestream-redirect/KINKAAC.aac"));
@@ -420,5 +421,146 @@ public sealed class DialRadioTests : IDisposable
             resp.Headers.TryAddWithoutValidation("icy-metaint", metaInterval.ToString());
             return Task.FromResult(resp);
         }
+    }
+
+    [Fact]
+    public void AudioFrameParser_SkipsId3v2AndExtractsCompleteMp3AndAdtsFrames()
+    {
+        // ID3v2 header ("ID3", v2.3, flags 0, syncsafe size 12) + 12 bytes ID3 body = 22 bytes total
+        var streamData = new List<byte>
+        {
+            (byte)'I', (byte)'D', (byte)'3', 3, 0, 0, 0, 0, 0, 12
+        };
+        streamData.AddRange(Enumerable.Repeat((byte)0x55, 12));
+        // Random leading junk before valid frame sync (must be skipped cleanly)
+        streamData.AddRange(new byte[] { 0x01, 0xFF, 0x00, 0x42 });
+
+        // MPEG1 Layer III, 192 kbps (idx 11 => 0xB0), 44100 Hz (idx 0 => 0x00), no pad => frameLen = 626
+        static byte[] MakeMp3Frame(byte fill)
+        {
+            var f = new byte[626];
+            f[0] = 0xFF;
+            f[1] = 0xFB;
+            f[2] = 0xB0;
+            f[3] = 0x00;
+            Array.Fill(f, fill, 4, f.Length - 4);
+            return f;
+        }
+
+        var mp3StartOffset = streamData.Count;
+        streamData.AddRange(MakeMp3Frame(0xAA));
+        streamData.AddRange(MakeMp3Frame(0xBB));
+        // Add incomplete trailing third frame (100 bytes) simulating sudden TCP drop
+        streamData.AddRange(MakeMp3Frame(0xCC).Take(100));
+
+        var detected = AudioFrameParser.TryDetectFormat(streamData.ToArray(), "audio/mpeg", 192, out var format, out var firstOff);
+        Assert.True(detected);
+        Assert.Equal(AudioCodecKind.Mp3, format.Codec);
+        Assert.Equal(44100, format.SampleRate);
+        Assert.Equal(2, format.Channels);
+        Assert.Equal(mp3StartOffset, firstOff);
+
+        var accumulator = new AudioFrameAccumulator(AudioCodecKind.Mp3);
+        var extracted = new List<AudioFrame>();
+        var raw = streamData.ToArray();
+        for (var i = 0; i < raw.Length; i += 37)
+        {
+            var len = Math.Min(37, raw.Length - i);
+            accumulator.Append(raw.AsSpan(i, len));
+            accumulator.ExtractFrames(extracted);
+        }
+
+        Assert.Equal(2, extracted.Count);
+        Assert.Equal(626, extracted[0].Payload.Length);
+        Assert.Equal(0xAA, extracted[0].Payload[4]);
+        Assert.Equal(0xBB, extracted[1].Payload[4]);
+
+        // Reconnect: discarding incomplete 100-byte fragment allows immediate clean sync on new frames
+        accumulator.ResetForNewConnection();
+        var afterReconnect = MakeMp3Frame(0xDD).Concat(MakeMp3Frame(0xEE)).ToArray();
+        accumulator.Append(afterReconnect);
+        extracted.Clear();
+        accumulator.ExtractFrames(extracted);
+        Assert.Equal(2, extracted.Count);
+        Assert.Equal(0xDD, extracted[0].Payload[4]);
+
+        // Verify ADTS AAC parsing (44100 Hz srIdx=4, chCfg=2, frameLen=128)
+        static byte[] MakeAdtsFrame(int len, byte fill)
+        {
+            var f = new byte[len];
+            f[0] = 0xFF;
+            f[1] = 0xF1; // MPEG-4 ADTS, Layer 0
+            f[2] = (byte)(0x40 | (4 << 2)); // AAC-LC, 44100Hz, ch bit0=0
+            f[3] = (byte)((2 << 6) | ((len >> 11) & 0x03)); // ch=2
+            f[4] = (byte)((len >> 3) & 0xFF);
+            f[5] = (byte)(((len & 0x07) << 5) | 0x1F);
+            f[6] = 0xFC; // 1 raw data block
+            Array.Fill(f, fill, 7, len - 7);
+            return f;
+        }
+
+        var adtsBytes = MakeAdtsFrame(128, 0x11).Concat(MakeAdtsFrame(128, 0x22)).ToArray();
+        Assert.True(AudioFrameParser.TryDetectFormat(adtsBytes, "audio/aac", 128, out var aacFmt, out _));
+        Assert.Equal(AudioCodecKind.AacAdts, aacFmt.Codec);
+        Assert.Equal(44100, aacFmt.SampleRate);
+        Assert.Equal(2, aacFmt.Channels);
+    }
+
+    [Fact]
+    public async Task TimedAudioFrameQueue_EnforcesTargetPrebufferAndRebufferHysteresis()
+    {
+        var queue = new TimedAudioFrameQueue(2); // 2s startup prebuffer, 1.5s rebuffer refill
+        var bufferingEvents = new List<bool>();
+        queue.BufferingChanged += b => bufferingEvents.Add(b);
+
+        var frameDur = TimeSpan.FromMilliseconds(500);
+        AudioFrame MakeFrame(byte id) => new([id], frameDur, 44100, 2, 192);
+
+        // 3 frames = 1.5s (< 2.0s target) -> initial prebuffer wait must still be pending
+        await queue.EnqueueAsync(MakeFrame(1), CancellationToken.None);
+        await queue.EnqueueAsync(MakeFrame(2), CancellationToken.None);
+        await queue.EnqueueAsync(MakeFrame(3), CancellationToken.None);
+
+        var prebufferTask = queue.WaitForInitialPrebufferAsync(CancellationToken.None);
+        await Task.Delay(30);
+        Assert.False(prebufferTask.IsCompleted);
+
+        // Frame #4 hits 2.0s -> releases initial prebuffer
+        await queue.EnqueueAsync(MakeFrame(4), CancellationToken.None);
+        await prebufferTask.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.Equal(TimeSpan.FromSeconds(2), queue.BufferedDuration);
+
+        // Drain all 4 frames -> next Dequeue triggers rebuffer hysteresis until 1.5s refills
+        for (byte expected = 1; expected <= 4; expected++)
+        {
+            var f = await queue.DequeueAsync(CancellationToken.None);
+            Assert.NotNull(f);
+            Assert.Equal(expected, f!.Payload[0]);
+        }
+
+        var dequeueTask = queue.DequeueAsync(CancellationToken.None).AsTask();
+        await Task.Delay(30);
+        Assert.False(dequeueTask.IsCompleted);
+        Assert.Equal([true], bufferingEvents);
+
+        // 2 frames (1.0s < 1.5s rebuffer threshold) must still hold playback cleanly
+        await queue.EnqueueAsync(MakeFrame(5), CancellationToken.None);
+        await queue.EnqueueAsync(MakeFrame(6), CancellationToken.None);
+        await Task.Delay(30);
+        Assert.False(dequeueTask.IsCompleted);
+
+        // 3rd frame hits 1.5s -> rebuffer ends and dequeue delivers frame #5 cleanly
+        await queue.EnqueueAsync(MakeFrame(7), CancellationToken.None);
+        var resumed = await dequeueTask.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.NotNull(resumed);
+        Assert.Equal(5, resumed!.Payload[0]);
+        Assert.Equal([true, false], bufferingEvents);
+
+        // Live buffer setting change updates target immediately without dropping queued frames
+        queue.UpdateBufferSeconds(15);
+        Assert.Equal(TimeSpan.FromSeconds(15), queue.TargetPrebufferDuration);
+        Assert.Equal(2, queue.FrameCount);
+
+        queue.Complete();
     }
 }

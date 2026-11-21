@@ -936,20 +936,26 @@ public sealed partial class HomeView : UserControl
             return;
         }
 
-        var bitratePart = station.BitrateKbps > 0
-            ? _localization.GetString("Radio.LiveStreamLabel", station.BitrateKbps)
-            : $"{station.CountryCode} • {station.Codec}";
+        var parts = new List<string>
+        {
+            station.BitrateKbps > 0
+                ? _localization.GetString("Radio.LiveStreamLabel", station.BitrateKbps)
+                : $"{station.CountryCode} • {station.Codec}"
+        };
+
+        if (snapshot.State is RadioPlaybackState.Playing or RadioPlaybackState.Buffering &&
+            snapshot.TargetBufferSeconds > 0)
+        {
+            var bufferedFormatted = Math.Max(0, snapshot.BufferedSeconds).ToString("0.0", System.Globalization.CultureInfo.CurrentUICulture);
+            parts.Add(_localization.GetString("Radio.BufferStatus", bufferedFormatted, snapshot.TargetBufferSeconds));
+        }
 
         if (snapshot.State == RadioPlaybackState.Playing && sessionElapsed > TimeSpan.Zero)
         {
-            var formatted = FormatDuration(sessionElapsed);
-            HeroMetaText.Text = $"{bitratePart}  •  {_localization.GetString("Radio.SessionTime", formatted)}";
-        }
-        else
-        {
-            HeroMetaText.Text = bitratePart;
+            parts.Add(_localization.GetString("Radio.SessionTime", FormatDuration(sessionElapsed)));
         }
 
+        HeroMetaText.Text = string.Join("  •  ", parts);
         HeroMetaText.Foreground = _theme.GetTextSecondaryBrush();
     }
 
