@@ -44,8 +44,6 @@ public sealed partial class MainWindow : Window
     private readonly Dictionary<string, UIElement> _viewCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<Button> _navButtons = [];
 
-    private Button? _feedbackNavButton;
-    private TextBlock? _feedbackNavLabel;
     private IntPtr _hwnd;
     private AppWindow? _appWindow;
     private SubclassProc? _subclassDelegate;
@@ -360,12 +358,6 @@ public sealed partial class MainWindow : Window
             }
         }
 
-        _feedbackNavButton = CreateNavButton("feedback", "\uED15", _localization["Nav.Feedback"]);
-        _feedbackNavLabel = FindLabelTextBlock(_feedbackNavButton);
-        _feedbackNavButton.Click += async (_, _) => await OpenFeedbackDialogAsync();
-        _theme.BindInteractiveButton(_feedbackNavButton, () => false);
-        RightNavPanel.Children.Insert(0, _feedbackNavButton);
-
         UpdateResponsiveNavLabels();
     }
 
@@ -416,11 +408,6 @@ public sealed partial class MainWindow : Window
         foreach (var btn in _navButtons)
         {
             _theme.RefreshInteractiveButton(btn);
-        }
-
-        if (_feedbackNavButton is not null)
-        {
-            _theme.RefreshInteractiveButton(_feedbackNavButton);
         }
     }
 
@@ -488,11 +475,6 @@ public sealed partial class MainWindow : Window
                 tb.Visibility = vis;
             }
         }
-
-        if (_feedbackNavLabel is not null)
-        {
-            _feedbackNavLabel.Visibility = vis;
-        }
     }
 
     private void OnLanguageChanged(string _)
@@ -513,14 +495,6 @@ public sealed partial class MainWindow : Window
                 AutomationProperties.SetName(btn, localized);
                 ToolTipService.SetToolTip(btn, localized);
             }
-        }
-
-        if (_feedbackNavButton is not null && _feedbackNavLabel is not null)
-        {
-            var fbText = _localization["Nav.Feedback"];
-            _feedbackNavLabel.Text = fbText;
-            AutomationProperties.SetName(_feedbackNavButton, fbText);
-            ToolTipService.SetToolTip(_feedbackNavButton, fbText);
         }
     }
 
