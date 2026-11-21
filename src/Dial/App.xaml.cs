@@ -211,14 +211,34 @@ public sealed partial class App : Application
             Order: 1));
 
         kb.RegisterArticle(new KnowledgeArticle(
+            Id: "dial-streaming-buffer",
+            CategoryKey: "KB.Category.Radio",
+            TitleKey: "KB.Article.StreamBuffer.Title",
+            SummaryKey: "KB.Article.StreamBuffer.Summary",
+            BodyKey: "KB.Article.StreamBuffer.Body",
+            BadgeText: "2s–30s Buffer",
+            CopyableReference: "BufferedFrameMediaSource -> MediaStreamSource",
+            Order: 2));
+
+        kb.RegisterArticle(new KnowledgeArticle(
             Id: "dial-timer-mini",
             CategoryKey: "KB.Category.Radio",
             TitleKey: "KB.Article.TimerMini.Title",
             SummaryKey: "KB.Article.TimerMini.Summary",
             BodyKey: "KB.Article.TimerMini.Body",
-            BadgeText: "Ctrl+M",
-            CopyableReference: "Ctrl+Alt+P / N / B / M",
-            Order: 2));
+            BadgeText: "Ctrl+M • VU",
+            CopyableReference: "Mini-player (420x208) • WASAPI L/R VU",
+            Order: 3));
+
+        kb.RegisterArticle(new KnowledgeArticle(
+            Id: "dial-hotkeys",
+            CategoryKey: "KB.Category.Radio",
+            TitleKey: "KB.Article.Hotkeys.Title",
+            SummaryKey: "KB.Article.Hotkeys.Summary",
+            BodyKey: "KB.Article.Hotkeys.Body",
+            BadgeText: "Ctrl+Alt+Shift",
+            CopyableReference: $"{RadioHotkeyDefaults.PlayPause} / {RadioHotkeyDefaults.Next} / {RadioHotkeyDefaults.Prev} / {RadioHotkeyDefaults.Mute} • {RadioHotkeyDefaults.ToggleWindow}",
+            Order: 4));
 
         kb.RegisterArticle(new KnowledgeArticle(
             Id: "tray-background",
@@ -228,7 +248,7 @@ public sealed partial class App : Application
             BodyKey: "KB.Article.Tray.Body",
             BadgeText: "Tray & GC",
             CopyableReference: "CollapseToTray() -> GC.Collect(1)",
-            Order: 3));
+            Order: 5));
 
         kb.RegisterArticle(new KnowledgeArticle(
             Id: "appdata-storage",
@@ -238,7 +258,7 @@ public sealed partial class App : Application
             BodyKey: "KB.Article.Storage.Body",
             BadgeText: AppVersion.ShortDisplayVersion,
             CopyableReference: Services.GetRequiredService<IPathService>().RootDirectory,
-            Order: 4));
+            Order: 6));
 
         var changelog = Services.GetRequiredService<IChangelogService>();
         changelog.RegisterRelease(new ChangelogRelease(
@@ -246,9 +266,18 @@ public sealed partial class App : Application
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
-                new ChangelogChange("Added", "Changelog.v031.CustomizableHotkeys")
+                new ChangelogChange("Changed", "Changelog.v032.UpdatedKnowledgeBase")
             },
             IsLatest: true));
+
+        changelog.RegisterRelease(new ChangelogRelease(
+            Version: "0.3.1",
+            ReleaseDate: new DateTime(2026, 11, 21),
+            Changes: new ChangelogChange[]
+            {
+                new ChangelogChange("Added", "Changelog.v031.CustomizableHotkeys")
+            },
+            IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
             Version: "0.3.0",

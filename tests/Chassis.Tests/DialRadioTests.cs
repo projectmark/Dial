@@ -7,6 +7,7 @@ using Xunit;
 
 namespace Chassis.Tests;
 
+[Collection("AppVersionState")]
 public sealed class DialRadioTests : IDisposable
 {
     private readonly string _tempRoot = Path.Combine(Path.GetTempPath(), $"DialRadioTests_{Guid.NewGuid():N}");
@@ -567,9 +568,13 @@ public sealed class DialRadioTests : IDisposable
     [Fact]
     public void AppVersion_UserAgentAndRadioOptionsAreDynamicAndUnique()
     {
+        var expectedToken = new string(
+            Chassis.Core.Versioning.AppVersion.EntryAssemblyName
+                .Where(c => char.IsLetterOrDigit(c) || c is '-' or '_')
+                .ToArray());
         var ua = Chassis.Core.Versioning.AppVersion.UserAgent;
         Assert.Contains('/', ua);
-        Assert.StartsWith(Chassis.Core.Versioning.AppVersion.EntryAssemblyName, ua, StringComparison.OrdinalIgnoreCase);
+        Assert.StartsWith(expectedToken, ua, StringComparison.OrdinalIgnoreCase);
 
         var allOptionKeys = typeof(RadioOptions)
             .GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
