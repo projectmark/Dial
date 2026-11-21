@@ -41,6 +41,7 @@ public sealed class RadioModule : IChassisModule
         services.AddSingleton<IDataStore<StationListeningStat>, JsonDataStore<StationListeningStat>>();
         services.AddSingleton<IPackageShareService<List<RadioStation>>, PackageShareService<List<RadioStation>>>();
         services.AddSingleton<IIcyMetadataReader, IcyMetadataReader>();
+        services.AddSingleton<IAudioMeterService, AudioMeterService>();
         services.AddSingleton<IRadioBrowserService, RadioBrowserService>();
         services.AddSingleton<ISleepTimerService, SleepTimerService>();
         services.AddSingleton<IListeningStatsService, ListeningStatsService>();

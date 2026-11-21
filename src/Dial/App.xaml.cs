@@ -243,9 +243,18 @@ public sealed partial class App : Application
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
-                new ChangelogChange("Fixed", "Changelog.v021.FixedMiniPlayer")
+                new ChangelogChange("Added", "Changelog.v022.AddedMiniVuAndControls")
             },
             IsLatest: true));
+
+        changelog.RegisterRelease(new ChangelogRelease(
+            Version: "0.2.1",
+            ReleaseDate: new DateTime(2026, 11, 21),
+            Changes: new ChangelogChange[]
+            {
+                new ChangelogChange("Fixed", "Changelog.v021.FixedMiniPlayer")
+            },
+            IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
             Version: "0.2.0",

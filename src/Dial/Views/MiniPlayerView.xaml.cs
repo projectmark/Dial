@@ -3,30 +3,45 @@ using Chassis.Core.Settings;
 using Chassis.UI.Theme;
 using Dial.Modules.Radio;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Media;
+using Windows.UI;
 
 namespace Dial.Views;
 
 public sealed partial class MiniPlayerView : UserControl
 {
     private readonly IRadioPlayerService _player;
+    private readonly IAudioMeterService _audioMeter;
     private readonly ISleepTimerService _sleepTimer;
     private readonly ISettingsService _settings;
     private readonly ILocalizationService _localization;
     private readonly ThemeManager _theme;
+    private readonly DispatcherQueueTimer _vuTimer;
+
     private bool _isSubscribed;
+    private bool _isSyncingVolume;
+    private float _smoothedLeft;
+    private float _smoothedRight;
 
     public MiniPlayerView()
     {
         InitializeComponent();
 
         _player = App.Services.GetRequiredService<IRadioPlayerService>();
+        _audioMeter = App.Services.GetRequiredService<IAudioMeterService>();
         _sleepTimer = App.Services.GetRequiredService<ISleepTimerService>();
         _settings = App.Services.GetRequiredService<ISettingsService>();
         _localization = App.Services.GetRequiredService<ILocalizationService>();
         _theme = App.Services.GetRequiredService<ThemeManager>();
+
+        _vuTimer = DispatcherQueue.CreateTimer();
+        _vuTimer.Interval = TimeSpan.FromMilliseconds(40);
+        _vuTimer.Tick += OnVuTimerTick;
 
         _theme.BindInteractiveButton(PrevBtn, () => false);
         _theme.BindInteractiveButton(PlayPauseBtn, () => _player.Current.State is RadioPlaybackState.Playing or RadioPlaybackState.Buffering);
@@ -55,10 +70,12 @@ public sealed partial class MiniPlayerView : UserControl
 
         ApplyLocalization();
         RenderState(_player.Current);
+        _vuTimer.Start();
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
+        _vuTimer.Stop();
         if (_isSubscribed)
         {
             _player.StateChanged -= OnPlayerStateChanged;
@@ -67,6 +84,27 @@ public sealed partial class MiniPlayerView : UserControl
             _localization.LanguageChanged -= OnLanguageChanged;
             _isSubscribed = false;
         }
+    }
+
+    private void OnVuTimerTick(DispatcherQueueTimer sender, object args)
+    {
+        var snap = _player.Current;
+        float targetL = 0f;
+        float targetR = 0f;
+
+        if (snap.State == RadioPlaybackState.Playing && !snap.IsMuted)
+        {
+            (targetL, targetR) = _audioMeter.SampleCurrentProcessLevels();
+        }
+
+        _smoothedLeft = targetL > _smoothedLeft ? targetL : _smoothedLeft * 0.78f;
+        _smoothedRight = targetR > _smoothedRight ? targetR : _smoothedRight * 0.78f;
+
+        if (_smoothedLeft < 0.008f) _smoothedLeft = 0f;
+        if (_smoothedRight < 0.008f) _smoothedRight = 0f;
+
+        LeftVuScale.ScaleX = _smoothedLeft;
+        RightVuScale.ScaleX = _smoothedRight;
     }
 
     private void OnPlayerStateChanged(RadioStateSnapshot snapshot)
@@ -101,19 +139,34 @@ public sealed partial class MiniPlayerView : UserControl
         ToolTipService.SetToolTip(PrevBtn, _localization["Radio.Previous"]);
         AutomationProperties.SetName(NextBtn, _localization["Radio.Next"]);
         ToolTipService.SetToolTip(NextBtn, _localization["Radio.Next"]);
+        AutomationProperties.SetName(VolumeSlider, _localization["Radio.Volume"]);
+        ToolTipService.SetToolTip(VolumeSlider, _localization["Radio.Volume"]);
         AutomationProperties.SetName(PinBtn, _localization["Radio.MiniPlayer.Pin"]);
         ToolTipService.SetToolTip(PinBtn, _localization["Radio.MiniPlayer.Pin"]);
         AutomationProperties.SetName(ExpandBtn, _localization["Radio.MiniPlayer.Expand"]);
         ToolTipService.SetToolTip(ExpandBtn, _localization["Radio.MiniPlayer.Expand"]);
+        AutomationProperties.SetName(LeftVuTrack, "Left channel VU meter");
+        AutomationProperties.SetName(RightVuTrack, "Right channel VU meter");
     }
 
     private void RenderState(RadioStateSnapshot snapshot)
     {
         var primary = _theme.GetTextPrimaryBrush();
         var secondary = _theme.GetTextSecondaryBrush();
+        var accent = _theme.GetAdaptiveAccentBrush();
 
         MiniCard.Background = _theme.GetCardBackgroundBrush();
         MiniCard.BorderBrush = _theme.GetCardBorderBrush();
+
+        var vuTrackBrush = new SolidColorBrush(_theme.IsDarkTheme
+            ? Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF)
+            : Color.FromArgb(0x16, 0x00, 0x00, 0x00));
+        LeftVuTrack.Background = vuTrackBrush;
+        RightVuTrack.Background = vuTrackBrush;
+        LeftVuFill.Background = accent;
+        RightVuFill.Background = accent;
+        LeftVuLabel.Foreground = secondary;
+        RightVuLabel.Foreground = secondary;
 
         StationTitle.Text = snapshot.ActiveStation?.Name ?? _localization["Radio.NoStationSelected"];
         StationTitle.Foreground = primary;
@@ -155,6 +208,13 @@ public sealed partial class MiniPlayerView : UserControl
         AutomationProperties.SetName(MuteBtn, muteLabel);
         ToolTipService.SetToolTip(MuteBtn, muteLabel);
 
+        var percent = (int)Math.Round(snapshot.Volume * 100);
+        _isSyncingVolume = true;
+        VolumeSlider.Value = percent;
+        _isSyncingVolume = false;
+        VolumeValueText.Text = $"{percent}%";
+        VolumeValueText.Foreground = snapshot.IsMuted ? _theme.GetTextDisabledBrush() : secondary;
+
         UpdateSleepReadout(_sleepTimer.IsActive ? _sleepTimer.Remaining : null);
 
         _theme.RefreshInteractiveButton(PrevBtn);
@@ -194,6 +254,16 @@ public sealed partial class MiniPlayerView : UserControl
 
     private void MuteBtn_Click(object sender, RoutedEventArgs e)
         => _player.ToggleMute();
+
+    private void VolumeSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        if (_isSyncingVolume)
+        {
+            return;
+        }
+
+        _player.SetVolume(e.NewValue / 100.0);
+    }
 
     private void PinBtn_Click(object sender, RoutedEventArgs e)
     {

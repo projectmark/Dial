@@ -188,4 +188,17 @@ public sealed class DialRadioTests : IDisposable
         var fromFile = await share.ImportFromFileAsync(filePath);
         Assert.Equal(4, fromFile.Count);
     }
+
+    [Fact]
+    public void AudioMeterService_ToVuLevel_MapsLogarithmicRangeCorrectly()
+    {
+        Assert.Equal(0f, AudioMeterService.ToVuLevel(0f));
+        Assert.Equal(0f, AudioMeterService.ToVuLevel(0.0001f));
+        Assert.Equal(1f, AudioMeterService.ToVuLevel(1f));
+
+        var low = AudioMeterService.ToVuLevel(0.05f);
+        var mid = AudioMeterService.ToVuLevel(0.25f);
+        var high = AudioMeterService.ToVuLevel(0.75f);
+        Assert.True(low > 0f && low < mid && mid < high && high < 1f);
+    }
 }

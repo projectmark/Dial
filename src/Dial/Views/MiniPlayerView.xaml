@@ -8,19 +8,21 @@
             x:Name="MiniCard"
             CornerRadius="8"
             BorderThickness="1"
-            Padding="14,10">
+            Padding="14,12">
             <Grid RowSpacing="8">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <!-- Station + Pin & Expand -->
+                <!-- Row 0: Station + Sleep Timer + Pin & Expand -->
                 <Grid Grid.Row="0" ColumnSpacing="8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
@@ -39,7 +41,26 @@
                         TextTrimming="CharacterEllipsis"
                         VerticalAlignment="Center" />
 
-                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+                    <StackPanel
+                        x:Name="SleepIndicator"
+                        Grid.Column="2"
+                        Orientation="Horizontal"
+                        Spacing="4"
+                        VerticalAlignment="Center"
+                        Visibility="Collapsed">
+                        <FontIcon
+                            x:Name="SleepIcon"
+                            FontFamily="Segoe Fluent Icons"
+                            FontSize="11"
+                            Glyph="&#xE823;" />
+                        <TextBlock
+                            x:Name="SleepText"
+                            FontSize="11"
+                            FontWeight="SemiBold"
+                            VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4">
                         <Button
                             x:Name="PinBtn"
                             Width="28"
@@ -61,85 +82,165 @@
                     </StackPanel>
                 </Grid>
 
-                <!-- Track / Tagline -->
+                <!-- Row 1: Track / Tagline -->
                 <TextBlock
                     x:Name="NowPlayingText"
                     Grid.Row="1"
-                    FontSize="12"
+                    FontSize="13"
                     TextTrimming="CharacterEllipsis" />
 
-                <!-- Transport & Sleep Readout -->
+                <!-- Row 2: Full-Width Transport & Volume Controls -->
                 <Grid Grid.Row="2" ColumnSpacing="8">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="34" />
                     </Grid.ColumnDefinitions>
 
-                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                        <Button
-                            x:Name="PrevBtn"
-                            Width="32"
-                            Height="32"
-                            Padding="0"
-                            CornerRadius="6"
-                            Click="PrevBtn_Click">
-                            <FontIcon FontFamily="Segoe Fluent Icons" FontSize="13" Glyph="&#xE892;" />
-                        </Button>
-                        <Button
-                            x:Name="PlayPauseBtn"
-                            Width="34"
-                            Height="34"
-                            Padding="0"
-                            CornerRadius="17"
-                            Click="PlayPauseBtn_Click">
-                            <FontIcon
-                                x:Name="PlayPauseGlyph"
-                                FontFamily="Segoe Fluent Icons"
-                                FontSize="14"
-                                Glyph="&#xE768;" />
-                        </Button>
-                        <Button
-                            x:Name="NextBtn"
-                            Width="32"
-                            Height="32"
-                            Padding="0"
-                            CornerRadius="6"
-                            Click="NextBtn_Click">
-                            <FontIcon FontFamily="Segoe Fluent Icons" FontSize="13" Glyph="&#xE893;" />
-                        </Button>
-                        <Button
-                            x:Name="MuteBtn"
-                            Width="32"
-                            Height="32"
-                            Padding="0"
-                            CornerRadius="6"
-                            Click="MuteBtn_Click">
-                            <FontIcon
-                                x:Name="MuteGlyph"
-                                FontFamily="Segoe Fluent Icons"
-                                FontSize="13"
-                                Glyph="&#xE767;" />
-                        </Button>
-                    </StackPanel>
+                    <Button
+                        x:Name="PrevBtn"
+                        Grid.Column="0"
+                        Width="38"
+                        Height="36"
+                        Padding="0"
+                        CornerRadius="6"
+                        Click="PrevBtn_Click">
+                        <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE892;" />
+                    </Button>
 
-                    <StackPanel
-                        x:Name="SleepIndicator"
+                    <Button
+                        x:Name="PlayPauseBtn"
                         Grid.Column="1"
-                        Orientation="Horizontal"
-                        Spacing="4"
-                        VerticalAlignment="Center"
-                        Visibility="Collapsed">
+                        Width="54"
+                        Height="36"
+                        Padding="0"
+                        CornerRadius="18"
+                        Click="PlayPauseBtn_Click">
                         <FontIcon
-                            x:Name="SleepIcon"
+                            x:Name="PlayPauseGlyph"
                             FontFamily="Segoe Fluent Icons"
-                            FontSize="11"
-                            Glyph="&#xE823;" />
-                        <TextBlock
-                            x:Name="SleepText"
-                            FontSize="11"
-                            FontWeight="SemiBold"
-                            VerticalAlignment="Center" />
-                    </StackPanel>
+                            FontSize="15"
+                            Glyph="&#xE768;" />
+                    </Button>
+
+                    <Button
+                        x:Name="NextBtn"
+                        Grid.Column="2"
+                        Width="38"
+                        Height="36"
+                        Padding="0"
+                        CornerRadius="6"
+                        Click="NextBtn_Click">
+                        <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE893;" />
+                    </Button>
+
+                    <Button
+                        x:Name="MuteBtn"
+                        Grid.Column="3"
+                        Width="36"
+                        Height="36"
+                        Padding="0"
+                        CornerRadius="6"
+                        Click="MuteBtn_Click">
+                        <FontIcon
+                            x:Name="MuteGlyph"
+                            FontFamily="Segoe Fluent Icons"
+                            FontSize="14"
+                            Glyph="&#xE767;" />
+                    </Button>
+
+                    <Slider
+                        x:Name="VolumeSlider"
+                        Grid.Column="4"
+                        HorizontalAlignment="Stretch"
+                        Minimum="0"
+                        Maximum="100"
+                        StepFrequency="2"
+                        SmallChange="2"
+                        LargeChange="10"
+                        VerticalAlignment="Center"
+                        ValueChanged="VolumeSlider_ValueChanged" />
+
+                    <TextBlock
+                        x:Name="VolumeValueText"
+                        Grid.Column="5"
+                        FontSize="11"
+                        FontWeight="SemiBold"
+                        TextAlignment="Right"
+                        VerticalAlignment="Center" />
+                </Grid>
+
+                <!-- Row 3: Subtle Stereo L/R VU Meter -->
+                <Grid Grid.Row="3" RowSpacing="4" Margin="0,2,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="12" />
+                        <RowDefinition Height="12" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="14" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock
+                        x:Name="LeftVuLabel"
+                        Grid.Row="0"
+                        Grid.Column="0"
+                        Text="L"
+                        FontSize="9"
+                        FontWeight="SemiBold"
+                        VerticalAlignment="Center" />
+
+                    <Border
+                        x:Name="LeftVuTrack"
+                        Grid.Row="0"
+                        Grid.Column="1"
+                        Height="5"
+                        CornerRadius="2.5"
+                        VerticalAlignment="Center">
+                        <Border
+                            x:Name="LeftVuFill"
+                            Height="5"
+                            CornerRadius="2.5"
+                            HorizontalAlignment="Stretch"
+                            Opacity="0.88"
+                            RenderTransformOrigin="0,0.5">
+                            <Border.RenderTransform>
+                                <ScaleTransform x:Name="LeftVuScale" ScaleX="0" />
+                            </Border.RenderTransform>
+                        </Border>
+                    </Border>
+
+                    <TextBlock
+                        x:Name="RightVuLabel"
+                        Grid.Row="1"
+                        Grid.Column="0"
+                        Text="R"
+                        FontSize="9"
+                        FontWeight="SemiBold"
+                        VerticalAlignment="Center" />
+
+                    <Border
+                        x:Name="RightVuTrack"
+                        Grid.Row="1"
+                        Grid.Column="1"
+                        Height="5"
+                        CornerRadius="2.5"
+                        VerticalAlignment="Center">
+                        <Border
+                            x:Name="RightVuFill"
+                            Height="5"
+                            CornerRadius="2.5"
+                            HorizontalAlignment="Stretch"
+                            Opacity="0.88"
+                            RenderTransformOrigin="0,0.5">
+                            <Border.RenderTransform>
+                                <ScaleTransform x:Name="RightVuScale" ScaleX="0" />
+                            </Border.RenderTransform>
+                        </Border>
+                    </Border>
                 </Grid>
             </Grid>
         </Border>

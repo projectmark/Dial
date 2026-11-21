@@ -29,8 +29,8 @@ public sealed partial class MainWindow : Window
     private const int WmGetMinMaxInfo = 0x0024;
     private const int MinLogicalWidth = 420;
     private const int MinLogicalHeight = 480;
-    private const int MiniClientLogicalWidth = 408;
-    private const int MiniClientLogicalHeight = 186;
+    private const int MiniClientLogicalWidth = 420;
+    private const int MiniClientLogicalHeight = 208;
     private const int DefaultLogicalWidth = 860;
     private const int DefaultLogicalHeight = 660;
     private const nuint SubclassId = 1001;
