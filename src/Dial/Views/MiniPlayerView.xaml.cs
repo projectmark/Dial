@@ -40,7 +40,7 @@ public sealed partial class MiniPlayerView : UserControl
         _theme = App.Services.GetRequiredService<ThemeManager>();
 
         _vuTimer = DispatcherQueue.CreateTimer();
-        _vuTimer.Interval = TimeSpan.FromMilliseconds(40);
+        _vuTimer.Interval = TimeSpan.FromMilliseconds(16);
         _vuTimer.Tick += OnVuTimerTick;
 
         _theme.BindInteractiveButton(PrevBtn, () => false);
@@ -97,14 +97,21 @@ public sealed partial class MiniPlayerView : UserControl
             (targetL, targetR) = _audioMeter.SampleCurrentProcessLevels();
         }
 
-        _smoothedLeft = targetL > _smoothedLeft ? targetL : _smoothedLeft * 0.78f;
-        _smoothedRight = targetR > _smoothedRight ? targetR : _smoothedRight * 0.78f;
-
-        if (_smoothedLeft < 0.008f) _smoothedLeft = 0f;
-        if (_smoothedRight < 0.008f) _smoothedRight = 0f;
+        _smoothedLeft = SmoothVuLevel(_smoothedLeft, targetL);
+        _smoothedRight = SmoothVuLevel(_smoothedRight, targetR);
 
         LeftVuScale.ScaleX = _smoothedLeft;
         RightVuScale.ScaleX = _smoothedRight;
+    }
+
+    private static float SmoothVuLevel(float current, float target)
+    {
+        const float attackFactor = 0.30f;
+        const float releaseFactor = 0.11f;
+
+        var factor = target >= current ? attackFactor : releaseFactor;
+        var next = current + ((target - current) * factor);
+        return next < 0.005f ? 0f : Math.Clamp(next, 0f, 1f);
     }
 
     private void OnPlayerStateChanged(RadioStateSnapshot snapshot)

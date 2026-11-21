@@ -201,4 +201,54 @@ public sealed class DialRadioTests : IDisposable
         var high = AudioMeterService.ToVuLevel(0.75f);
         Assert.True(low > 0f && low < mid && mid < high && high < 1f);
     }
+
+    [Fact]
+    public void RadioBackupImporter_ParsesRadiOhBackupPreservingCustomNameSortingAndDeduplication()
+    {
+        const string radiOhJson = """
+            [
+              {
+                "id": "second-id",
+                "manualSortingId": 15,
+                "name": "Radio Luxembourg 208",
+                "url": "https:\/\/stream.zeno.fm\/3384cgvyk2zuv",
+                "isPlaying": false,
+                "faviconUrl": ""
+              },
+              {
+                "id": "first-id",
+                "manualSortingId": 0,
+                "name": "Laser 558 Classic",
+                "url": "https:\/\/s6.autopo.st\/proxy\/neffjohd?mp=\/stream",
+                "isPlaying": false,
+                "faviconUrl": "",
+                "customName": "Laser 558 Classic #1"
+              },
+              {
+                "id": "dup-id",
+                "manualSortingId": 14,
+                "name": "Radio Luxembourg Memories ",
+                "url": "https:\/\/stream.zeno.fm\/3384cgvyk2zuv",
+                "isPlaying": false,
+                "faviconUrl": ""
+              }
+            ]
+            """;
+
+        var share = new PackageShareService<List<RadioStation>>("Dial");
+        var imported = RadioBackupImporter.ParseAny(radiOhJson, share);
+
+        Assert.Equal(2, imported.Count);
+        Assert.Equal("Laser 558 Classic #1", imported[0].Name);
+        Assert.Equal("https://s6.autopo.st/proxy/neffjohd?mp=/stream", imported[0].StreamUrl);
+        Assert.Equal("Laser 558 Classic", imported[0].Tagline);
+
+        Assert.Equal("Radio Luxembourg Memories", imported[1].Name);
+        Assert.Equal("https://stream.zeno.fm/3384cgvyk2zuv", imported[1].StreamUrl);
+
+        // Also ensure DIAL-v1 share codes still auto-detect cleanly
+        var code = share.ExportToShareCode(KinkStationCatalog.DefaultStations.ToList());
+        var fromCode = RadioBackupImporter.ParseAny(code, share);
+        Assert.Equal(4, fromCode.Count);
+    }
 }

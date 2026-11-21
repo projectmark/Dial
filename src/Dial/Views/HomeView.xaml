@@ -410,8 +410,9 @@
                                     </StackPanel>
                                     <Button.Flyout>
                                         <MenuFlyout>
-                                            <MenuFlyoutItem x:Name="ImportCodeMenuItem" Click="ImportCodeMenuItem_Click" />
+                                            <MenuFlyoutItem x:Name="ImportRadiOhFileMenuItem" Click="ImportRadiOhFileMenuItem_Click" />
                                             <MenuFlyoutItem x:Name="ImportFileMenuItem" Click="ImportFileMenuItem_Click" />
+                                            <MenuFlyoutItem x:Name="ImportCodeMenuItem" Click="ImportCodeMenuItem_Click" />
                                         </MenuFlyout>
                                     </Button.Flyout>
                                 </Button>

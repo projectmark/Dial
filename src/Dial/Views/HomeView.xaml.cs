@@ -543,6 +543,7 @@ public sealed partial class HomeView : UserControl
 
         ExportCodeMenuItem.Text = _localization["Radio.Share.ExportCode"];
         ExportFileMenuItem.Text = _localization["Radio.Share.ExportFile"];
+        ImportRadiOhFileMenuItem.Text = _localization["Radio.Share.ImportRadiOhFile"];
         ImportCodeMenuItem.Text = _localization["Radio.Share.ImportCode"];
         ImportFileMenuItem.Text = _localization["Radio.Share.ImportFile"];
 
@@ -1065,18 +1066,14 @@ public sealed partial class HomeView : UserControl
         var codeBox = new TextBox
         {
             PlaceholderText = _localization["Radio.Share.CodePlaceholder"],
-            AcceptsReturn = false,
+            AcceptsReturn = true,
             TextWrapping = TextWrapping.Wrap,
-            MinHeight = 72
-        };
-        var replaceCheck = new CheckBox
-        {
-            Content = _localization["Radio.Share.ReplaceExisting"]
+            MinHeight = 96,
+            MaxHeight = 220
         };
 
-        var panel = new StackPanel { Spacing = 10, MinWidth = 360 };
+        var panel = new StackPanel { Spacing = 10, MinWidth = 380 };
         panel.Children.Add(codeBox);
-        panel.Children.Add(replaceCheck);
 
         var dialog = new ContentDialog
         {
@@ -1093,9 +1090,8 @@ public sealed partial class HomeView : UserControl
 
         try
         {
-            var imported = _shareService.ImportFromShareCode(codeBox.Text);
-            await _player.ImportStationsAsync(imported, replaceCheck.IsChecked == true);
-            ShowEditFeedback(_localization.GetString("Radio.Share.ImportedCount", imported.Count));
+            var imported = RadioBackupImporter.ParseAny(codeBox.Text, _shareService);
+            await ConfirmAndAppendImportedStationsAsync(imported);
         }
         catch
         {
@@ -1103,7 +1099,13 @@ public sealed partial class HomeView : UserControl
         }
     }
 
+    private async void ImportRadiOhFileMenuItem_Click(object sender, RoutedEventArgs e)
+        => await PickAndImportFileAsync(new[] { ".json", ".txt" });
+
     private async void ImportFileMenuItem_Click(object sender, RoutedEventArgs e)
+        => await PickAndImportFileAsync(new[] { ".chassispack", ".json" });
+
+    private async Task PickAndImportFileAsync(IEnumerable<string> extensions)
     {
         if (MainWindow.Instance is null) return;
 
@@ -1111,8 +1113,10 @@ public sealed partial class HomeView : UserControl
         {
             SuggestedStartLocation = PickerLocationId.DocumentsLibrary
         };
-        picker.FileTypeFilter.Add(".chassispack");
-        picker.FileTypeFilter.Add(".json");
+        foreach (var ext in extensions)
+        {
+            picker.FileTypeFilter.Add(ext);
+        }
         InitializeWithWindow.Initialize(picker, MainWindow.Instance.Hwnd);
 
         var file = await picker.PickSingleFileAsync();
@@ -1120,14 +1124,83 @@ public sealed partial class HomeView : UserControl
 
         try
         {
-            var imported = await _shareService.ImportFromFileAsync(file.Path);
-            await _player.ImportStationsAsync(imported, replaceExisting: false);
-            ShowEditFeedback(_localization.GetString("Radio.Share.ImportedCount", imported.Count));
+            var rawText = await File.ReadAllTextAsync(file.Path);
+            var imported = RadioBackupImporter.ParseAny(rawText, _shareService);
+            await ConfirmAndAppendImportedStationsAsync(imported);
         }
         catch
         {
             ShowEditFeedback(_localization["Radio.Share.InvalidInput"], isError: true);
         }
+    }
+
+    private async Task ConfirmAndAppendImportedStationsAsync(IReadOnlyList<RadioStation> parsed)
+    {
+        if (XamlRoot is null) return;
+
+        var existingUrls = new HashSet<string>(_player.Stations.Select(s => s.StreamUrl), StringComparer.OrdinalIgnoreCase);
+        var newStations = new List<RadioStation>();
+        foreach (var station in parsed)
+        {
+            if (existingUrls.Add(station.StreamUrl))
+            {
+                newStations.Add(station);
+            }
+        }
+
+        if (newStations.Count == 0)
+        {
+            ShowEditFeedback(_localization["Radio.Share.AllAlreadyPresent"]);
+            return;
+        }
+
+        var skippedCount = parsed.Count - newStations.Count;
+        var summaryText = skippedCount > 0
+            ? _localization.GetString("Radio.Share.ConfirmBodyWithSkipped", newStations.Count, skippedCount)
+            : _localization.GetString("Radio.Share.ConfirmBody", newStations.Count);
+
+        var previewLines = newStations
+            .Take(6)
+            .Select(s => $"• {s.Name}")
+            .ToList();
+        if (newStations.Count > 6)
+        {
+            previewLines.Add(_localization.GetString("Radio.Share.ConfirmMore", newStations.Count - 6));
+        }
+
+        var bodyStack = new StackPanel { Spacing = 10, MinWidth = 360 };
+        bodyStack.Children.Add(new TextBlock
+        {
+            Text = summaryText,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = _theme.GetTextPrimaryBrush()
+        });
+        bodyStack.Children.Add(new TextBlock
+        {
+            Text = string.Join(Environment.NewLine, previewLines),
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = _theme.GetTextSecondaryBrush()
+        });
+
+        var confirmDialog = new ContentDialog
+        {
+            Title = _localization["Radio.Share.ConfirmTitle"],
+            PrimaryButtonText = _localization.GetString("Radio.Share.ConfirmAddButton", newStations.Count),
+            CloseButtonText = _localization["Common.Cancel"],
+            DefaultButton = ContentDialogButton.Primary,
+            RequestedTheme = _theme.IsDarkTheme ? ElementTheme.Dark : ElementTheme.Light,
+            Content = bodyStack,
+            XamlRoot = XamlRoot
+        };
+
+        if (await confirmDialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        await _player.ImportStationsAsync(newStations, replaceExisting: false);
+        ShowEditFeedback(_localization.GetString("Radio.Share.ImportedCount", newStations.Count));
     }
 
     private void SleepTimerFlyout_Opening(object sender, object e)
