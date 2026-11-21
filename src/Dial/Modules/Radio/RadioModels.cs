@@ -54,6 +54,81 @@ public sealed record StationListeningStat(
     DateTimeOffset LastPlayedUtc);
 
 /// <summary>
+/// Pure collection helpers for multi-select reordering and bulk removal of favorite stations.
+/// </summary>
+public static class StationListOperations
+{
+    /// <summary>
+    /// Moves all stations matching <paramref name="stationIds"/> (preserving their relative order)
+    /// to <paramref name="targetInsertionIndex"/> in the original list.
+    /// </summary>
+    public static List<RadioStation> ReorderStations(
+        IReadOnlyList<RadioStation> stations,
+        IReadOnlyCollection<string> stationIds,
+        int targetInsertionIndex)
+    {
+        ArgumentNullException.ThrowIfNull(stations);
+        ArgumentNullException.ThrowIfNull(stationIds);
+
+        if (stations.Count == 0 || stationIds.Count == 0)
+        {
+            return stations.ToList();
+        }
+
+        var idSet = new HashSet<string>(stationIds, StringComparer.OrdinalIgnoreCase);
+        var moving = new List<RadioStation>();
+        var remaining = new List<RadioStation>();
+        var removedBeforeTarget = 0;
+
+        for (var i = 0; i < stations.Count; i++)
+        {
+            var item = stations[i];
+            if (idSet.Contains(item.Id))
+            {
+                moving.Add(item);
+                if (i < targetInsertionIndex)
+                {
+                    removedBeforeTarget++;
+                }
+            }
+            else
+            {
+                remaining.Add(item);
+            }
+        }
+
+        if (moving.Count == 0)
+        {
+            return stations.ToList();
+        }
+
+        var insertAt = Math.Clamp(targetInsertionIndex - removedBeforeTarget, 0, remaining.Count);
+        remaining.InsertRange(insertAt, moving);
+        return remaining;
+    }
+
+    /// <summary>
+    /// Removes all stations matching <paramref name="stationIds"/> while ensuring at least one station remains.
+    /// </summary>
+    public static List<RadioStation> RemoveStations(
+        IReadOnlyList<RadioStation> stations,
+        IReadOnlyCollection<string> stationIds)
+    {
+        ArgumentNullException.ThrowIfNull(stations);
+        ArgumentNullException.ThrowIfNull(stationIds);
+
+        if (stations.Count <= 1 || stationIds.Count == 0)
+        {
+            return stations.ToList();
+        }
+
+        var idSet = new HashSet<string>(stationIds, StringComparer.OrdinalIgnoreCase);
+        var remaining = stations.Where(s => !idSet.Contains(s.Id)).ToList();
+        return remaining.Count == 0 ? stations.ToList() : remaining;
+    }
+}
+
+/// <summary>
 /// Official KINK Radio station definitions seeded as default favorites.
 /// </summary>
 public static class KinkStationCatalog

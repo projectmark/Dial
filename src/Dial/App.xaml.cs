@@ -243,9 +243,18 @@ public sealed partial class App : Application
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
-                new ChangelogChange("Added", "Changelog.v023.AddedRadiOhImportAndSmoothing")
+                new ChangelogChange("Added", "Changelog.v024.AddedBulkSelectionAndDrag")
             },
             IsLatest: true));
+
+        changelog.RegisterRelease(new ChangelogRelease(
+            Version: "0.2.3",
+            ReleaseDate: new DateTime(2026, 11, 21),
+            Changes: new ChangelogChange[]
+            {
+                new ChangelogChange("Added", "Changelog.v023.AddedRadiOhImportAndSmoothing")
+            },
+            IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
             Version: "0.2.2",

@@ -432,6 +432,43 @@
                             </Button>
                         </Grid>
 
+                        <Grid ColumnSpacing="10" Margin="0,2,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <CheckBox
+                                x:Name="SelectAllCheckBox"
+                                Grid.Column="0"
+                                IsThreeState="True"
+                                MinWidth="0"
+                                VerticalAlignment="Center"
+                                Click="SelectAllCheckBox_Click" />
+
+                            <TextBlock
+                                x:Name="SelectionHintText"
+                                Grid.Column="1"
+                                FontSize="12"
+                                VerticalAlignment="Center"
+                                TextTrimming="CharacterEllipsis" />
+
+                            <Button
+                                x:Name="BulkDeleteBtn"
+                                Grid.Column="2"
+                                Height="32"
+                                Padding="12,4"
+                                CornerRadius="6"
+                                IsEnabled="False"
+                                Click="BulkDeleteBtn_Click">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon FontFamily="Segoe Fluent Icons" FontSize="12" Glyph="&#xE74D;" />
+                                    <TextBlock x:Name="BulkDeleteLabel" FontSize="12" FontWeight="SemiBold" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+
                         <TextBlock
                             x:Name="EditStatusText"
                             FontSize="12"

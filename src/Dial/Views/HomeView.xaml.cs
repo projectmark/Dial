@@ -5,6 +5,7 @@ using Chassis.UI.Theme;
 using Dial.Modules.Radio;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI;
+using Microsoft.UI.Input;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -12,6 +13,8 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage.Pickers;
+using Windows.System;
+using Windows.UI.Core;
 using WinRT.Interop;
 
 namespace Dial.Views;
@@ -28,6 +31,15 @@ public sealed partial class HomeView : UserControl
         Border? IconBox,
         FontIcon? IconGlyph);
 
+    private sealed record EditRowVisual(
+        string StationId,
+        int Index,
+        Border RowBorder,
+        CheckBox SelectBox,
+        Border TopDropIndicator,
+        Border BottomDropIndicator,
+        FontIcon GripIcon);
+
     private static readonly int[] SleepPresetMinutes = [15, 30, 45, 60, 120, 240, 360];
 
     private readonly IRadioPlayerService _player;
@@ -38,8 +50,12 @@ public sealed partial class HomeView : UserControl
     private readonly ILocalizationService _localization;
     private readonly ThemeManager _theme;
     private readonly List<StationRowVisual> _stationVisuals = [];
+    private readonly List<EditRowVisual> _editRowVisuals = [];
     private readonly List<Button> _sleepPresetButtons = [];
+    private readonly HashSet<string> _selectedStationIds = new(StringComparer.OrdinalIgnoreCase);
 
+    private List<string> _draggedStationIds = [];
+    private int _lastSelectionAnchorIndex = -1;
     private bool _isSyncingVolume;
     private bool _isSubscribed;
     private bool _isEditMode;
@@ -71,6 +87,7 @@ public sealed partial class HomeView : UserControl
         _theme.BindInteractiveButton(ExportBtn, () => false);
         _theme.BindInteractiveButton(ImportBtn, () => false);
         _theme.BindInteractiveButton(DoneEditingBtn, () => true);
+        _theme.BindInteractiveButton(BulkDeleteBtn, () => false);
         _theme.BindInteractiveButton(SleepCustomStartBtn, () => false);
         _theme.BindInteractiveButton(SleepFlyoutCancelBtn, () => false);
 
@@ -214,12 +231,20 @@ public sealed partial class HomeView : UserControl
         StationsGrid.ColumnDefinitions.Clear();
         StationsGrid.RowDefinitions.Clear();
         _stationVisuals.Clear();
+        _editRowVisuals.Clear();
 
         var stations = _player.Stations;
+        _selectedStationIds.RemoveWhere(id => !stations.Any(s => string.Equals(s.Id, id, StringComparison.OrdinalIgnoreCase)));
+        if (_lastSelectionAnchorIndex >= stations.Count)
+        {
+            _lastSelectionAnchorIndex = stations.Count - 1;
+        }
+
         var viewMode = _settings.GetOption(RadioModule.ViewModeOptionKey, "list");
         var useGrid = !_isEditMode && string.Equals(viewMode, "grid", StringComparison.OrdinalIgnoreCase);
 
         StationsListPanel.Visibility = useGrid ? Visibility.Collapsed : Visibility.Visible;
+        StationsListPanel.Spacing = _isEditMode ? 2 : 6;
         StationsGrid.Visibility = useGrid ? Visibility.Visible : Visibility.Collapsed;
 
         if (useGrid)
@@ -229,6 +254,11 @@ public sealed partial class HomeView : UserControl
         else
         {
             BuildListStations(stations);
+        }
+
+        if (_isEditMode)
+        {
+            SyncEditSelectionVisuals();
         }
     }
 
@@ -291,15 +321,38 @@ public sealed partial class HomeView : UserControl
 
             if (_isEditMode)
             {
-                var rowGrid = new Grid { ColumnSpacing = 8 };
-                rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                var capturedStation = station;
+                var capturedIndex = i;
 
-                Grid.SetColumn(accentPill, 0);
-                Grid.SetColumn(titleText, 1);
+                var gripIcon = new FontIcon
+                {
+                    FontFamily = new FontFamily("Segoe Fluent Icons"),
+                    Glyph = "\uE784",
+                    FontSize = 13,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                var selectBox = new CheckBox
+                {
+                    MinWidth = 0,
+                    Width = 24,
+                    Padding = new Thickness(0),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                AutomationProperties.SetName(selectBox, displayName);
+                selectBox.Click += (_, _) => HandleEditItemSelection(capturedStation.Id, capturedIndex, IsShiftDown());
+
                 titleText.TextAlignment = TextAlignment.Left;
                 titleText.HorizontalAlignment = HorizontalAlignment.Left;
+
+                var titleTapTarget = new Grid
+                {
+                    Background = new SolidColorBrush(Colors.Transparent),
+                    VerticalAlignment = VerticalAlignment.Stretch,
+                    HorizontalAlignment = HorizontalAlignment.Stretch
+                };
+                titleTapTarget.Children.Add(titleText);
+                titleTapTarget.Tapped += (_, _) => HandleEditItemSelection(capturedStation.Id, capturedIndex, IsShiftDown());
 
                 var actionsPanel = new StackPanel
                 {
@@ -308,7 +361,6 @@ public sealed partial class HomeView : UserControl
                     VerticalAlignment = VerticalAlignment.Center
                 };
 
-                var capturedStation = station;
                 var upBtn = CreateIconActionButton("\uE70E", _localization["Radio.Edit.MoveUp"], i > 0, async () =>
                 {
                     await _player.MoveStationAsync(capturedStation.Id, -1);
@@ -330,11 +382,43 @@ public sealed partial class HomeView : UserControl
                 actionsPanel.Children.Add(downBtn);
                 actionsPanel.Children.Add(renameBtn);
                 actionsPanel.Children.Add(deleteBtn);
-                Grid.SetColumn(actionsPanel, 2);
 
+                var rowGrid = new Grid { ColumnSpacing = 8 };
+                rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                Grid.SetColumn(gripIcon, 0);
+                Grid.SetColumn(selectBox, 1);
+                Grid.SetColumn(accentPill, 2);
+                Grid.SetColumn(titleTapTarget, 3);
+                Grid.SetColumn(actionsPanel, 4);
+
+                rowGrid.Children.Add(gripIcon);
+                rowGrid.Children.Add(selectBox);
                 rowGrid.Children.Add(accentPill);
-                rowGrid.Children.Add(titleText);
+                rowGrid.Children.Add(titleTapTarget);
                 rowGrid.Children.Add(actionsPanel);
+
+                var topDropIndicator = new Border
+                {
+                    Height = 2,
+                    CornerRadius = new CornerRadius(1),
+                    Margin = new Thickness(8, 0, 8, 2),
+                    Opacity = 0,
+                    IsHitTestVisible = false
+                };
+
+                var bottomDropIndicator = new Border
+                {
+                    Height = 2,
+                    CornerRadius = new CornerRadius(1),
+                    Margin = new Thickness(8, 2, 8, 0),
+                    Opacity = 0,
+                    IsHitTestVisible = false
+                };
 
                 var rowBorder = new Border
                 {
@@ -343,11 +427,107 @@ public sealed partial class HomeView : UserControl
                     Padding = new Thickness(12, 8, 12, 8),
                     Background = _theme.GetCardBackgroundBrush(),
                     BorderBrush = _theme.GetCardBorderBrush(),
+                    CanDrag = true,
+                    AllowDrop = true,
                     Child = rowGrid
                 };
 
-                StationsListPanel.Children.Add(rowBorder);
+                rowBorder.DragStarting += (_, args) =>
+                {
+                    var currentStations = _player.Stations;
+                    if (_selectedStationIds.Contains(capturedStation.Id))
+                    {
+                        _draggedStationIds = currentStations
+                            .Where(s => _selectedStationIds.Contains(s.Id))
+                            .Select(s => s.Id)
+                            .ToList();
+                    }
+                    else
+                    {
+                        _draggedStationIds = [capturedStation.Id];
+                    }
+
+                    args.AllowedOperations = DataPackageOperation.Move;
+                    args.Data.RequestedOperation = DataPackageOperation.Move;
+                    args.Data.SetText(_draggedStationIds.Count == 1
+                        ? capturedStation.Name
+                        : _localization.GetString("Radio.Edit.DragCount", _draggedStationIds.Count));
+
+                    foreach (var visual in _editRowVisuals)
+                    {
+                        if (_draggedStationIds.Contains(visual.StationId, StringComparer.OrdinalIgnoreCase))
+                        {
+                            visual.RowBorder.Opacity = 0.45;
+                        }
+                    }
+                };
+
+                rowBorder.DragOver += (_, args) =>
+                {
+                    if (_draggedStationIds.Count == 0)
+                    {
+                        return;
+                    }
+
+                    args.AcceptedOperation = DataPackageOperation.Move;
+                    args.DragUIOverride.IsCaptionVisible = true;
+                    args.DragUIOverride.IsContentVisible = true;
+                    args.DragUIOverride.Caption = _draggedStationIds.Count == 1
+                        ? _localization["Radio.Edit.MoveHere"]
+                        : _localization.GetString("Radio.Edit.DragCount", _draggedStationIds.Count);
+
+                    var pos = args.GetPosition(rowBorder);
+                    var insertAfter = pos.Y >= rowBorder.ActualHeight / 2.0;
+                    ShowDropIndicatorForRow(capturedIndex, insertAfter);
+                };
+
+                rowBorder.DragLeave += (_, _) =>
+                {
+                    topDropIndicator.Opacity = 0;
+                    bottomDropIndicator.Opacity = 0;
+                };
+
+                rowBorder.Drop += async (_, args) =>
+                {
+                    ClearAllDropIndicators();
+                    if (_draggedStationIds.Count == 0)
+                    {
+                        return;
+                    }
+
+                    var pos = args.GetPosition(rowBorder);
+                    var insertAfter = pos.Y >= rowBorder.ActualHeight / 2.0;
+                    var targetInsertionIndex = insertAfter ? capturedIndex + 1 : capturedIndex;
+
+                    var idsToMove = _draggedStationIds.ToList();
+                    _draggedStationIds.Clear();
+                    RestoreAllRowOpacities();
+
+                    await _player.MoveStationsAsync(idsToMove, targetInsertionIndex);
+                };
+
+                rowBorder.DropCompleted += (_, _) =>
+                {
+                    _draggedStationIds.Clear();
+                    ClearAllDropIndicators();
+                    RestoreAllRowOpacities();
+                };
+
+                var wrapper = new StackPanel { Spacing = 0 };
+                wrapper.Children.Add(topDropIndicator);
+                wrapper.Children.Add(rowBorder);
+                wrapper.Children.Add(bottomDropIndicator);
+
+                StationsListPanel.Children.Add(wrapper);
                 _stationVisuals.Add(new StationRowVisual(station, null, accentPill, titleText, null, null, null, null));
+                _editRowVisuals.Add(new EditRowVisual(
+                    station.Id,
+                    i,
+                    rowBorder,
+                    selectBox,
+                    topDropIndicator,
+                    bottomDropIndicator,
+                    gripIcon));
             }
             else
             {
@@ -540,6 +720,9 @@ public sealed partial class HomeView : UserControl
         ExportLabel.Text = _localization["Radio.Edit.Export"];
         ImportLabel.Text = _localization["Radio.Edit.Import"];
         DoneEditingLabel.Text = _localization["Radio.Edit.Done"];
+        SelectAllCheckBox.Content = _localization["Radio.Edit.SelectAll"];
+        SelectionHintText.Text = _localization["Radio.Edit.SelectionHint"];
+        UpdateBulkActionLabels();
 
         ExportCodeMenuItem.Text = _localization["Radio.Share.ExportCode"];
         ExportFileMenuItem.Text = _localization["Radio.Share.ExportFile"];
@@ -678,6 +861,7 @@ public sealed partial class HomeView : UserControl
         _theme.RefreshInteractiveButton(ExportBtn);
         _theme.RefreshInteractiveButton(ImportBtn);
         _theme.RefreshInteractiveButton(DoneEditingBtn);
+        _theme.RefreshInteractiveButton(BulkDeleteBtn);
         _theme.RefreshInteractiveButton(SleepCustomStartBtn);
         _theme.RefreshInteractiveButton(SleepFlyoutCancelBtn);
 
@@ -729,6 +913,12 @@ public sealed partial class HomeView : UserControl
                     item.MetaText.Foreground = secondary;
                 }
             }
+        }
+
+        if (_isEditMode)
+        {
+            SelectionHintText.Foreground = secondary;
+            SyncEditSelectionVisuals();
         }
     }
 
@@ -1021,10 +1211,180 @@ public sealed partial class HomeView : UserControl
     private void EditModeBtn_Click(object sender, RoutedEventArgs e)
     {
         _isEditMode = !_isEditMode;
+        if (!_isEditMode)
+        {
+            _selectedStationIds.Clear();
+            _lastSelectionAnchorIndex = -1;
+            _draggedStationIds.Clear();
+        }
+
         EditStatusText.Visibility = Visibility.Collapsed;
         ApplyLocalization();
         RebuildStationsUi();
         RenderState(_player.Current);
+    }
+
+    private static bool IsShiftDown()
+        => InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift)
+            .HasFlag(CoreVirtualKeyStates.Down);
+
+    private void HandleEditItemSelection(string stationId, int index, bool isShiftDown)
+    {
+        var stations = _player.Stations;
+        if (isShiftDown && _lastSelectionAnchorIndex >= 0 && _lastSelectionAnchorIndex < stations.Count)
+        {
+            var start = Math.Min(_lastSelectionAnchorIndex, index);
+            var end = Math.Max(_lastSelectionAnchorIndex, index);
+            for (var k = start; k <= end; k++)
+            {
+                _selectedStationIds.Add(stations[k].Id);
+            }
+        }
+        else
+        {
+            if (!_selectedStationIds.Remove(stationId))
+            {
+                _selectedStationIds.Add(stationId);
+            }
+
+            _lastSelectionAnchorIndex = index;
+        }
+
+        SyncEditSelectionVisuals();
+    }
+
+    private void SyncEditSelectionVisuals()
+    {
+        var accent = _theme.GetAdaptiveAccentBrush();
+        var accentTint = _theme.GetAdaptiveAccentTintBrush();
+        var cardBg = _theme.GetCardBackgroundBrush();
+        var cardBorder = _theme.GetCardBorderBrush();
+        var secondary = _theme.GetTextSecondaryBrush();
+
+        foreach (var row in _editRowVisuals)
+        {
+            var isChecked = _selectedStationIds.Contains(row.StationId);
+            row.SelectBox.IsChecked = isChecked;
+            row.RowBorder.Background = isChecked ? accentTint : cardBg;
+            row.RowBorder.BorderBrush = isChecked ? accent : cardBorder;
+            row.GripIcon.Foreground = isChecked ? accent : secondary;
+        }
+
+        var total = _editRowVisuals.Count;
+        var selectedCount = _selectedStationIds.Count;
+        SelectAllCheckBox.IsChecked = total == 0 || selectedCount == 0
+            ? false
+            : selectedCount == total
+                ? true
+                : null;
+
+        UpdateBulkActionLabels();
+    }
+
+    private void UpdateBulkActionLabels()
+    {
+        var count = _selectedStationIds.Count;
+        BulkDeleteBtn.IsEnabled = count > 0;
+        BulkDeleteLabel.Text = count > 0
+            ? _localization.GetString("Radio.Edit.BulkDeleteCount", count)
+            : _localization["Radio.Edit.BulkDelete"];
+        AutomationProperties.SetName(BulkDeleteBtn, BulkDeleteLabel.Text);
+        _theme.RefreshInteractiveButton(BulkDeleteBtn);
+    }
+
+    private void ShowDropIndicatorForRow(int targetIndex, bool insertAfter)
+    {
+        var accent = _theme.GetAdaptiveAccentBrush();
+        foreach (var row in _editRowVisuals)
+        {
+            if (row.Index == targetIndex)
+            {
+                row.TopDropIndicator.Background = accent;
+                row.BottomDropIndicator.Background = accent;
+                row.TopDropIndicator.Opacity = insertAfter ? 0 : 1;
+                row.BottomDropIndicator.Opacity = insertAfter ? 1 : 0;
+            }
+            else
+            {
+                row.TopDropIndicator.Opacity = 0;
+                row.BottomDropIndicator.Opacity = 0;
+            }
+        }
+    }
+
+    private void ClearAllDropIndicators()
+    {
+        foreach (var row in _editRowVisuals)
+        {
+            row.TopDropIndicator.Opacity = 0;
+            row.BottomDropIndicator.Opacity = 0;
+        }
+    }
+
+    private void RestoreAllRowOpacities()
+    {
+        foreach (var row in _editRowVisuals)
+        {
+            row.RowBorder.Opacity = 1.0;
+        }
+    }
+
+    private void SelectAllCheckBox_Click(object sender, RoutedEventArgs e)
+    {
+        var stations = _player.Stations;
+        if (_selectedStationIds.Count == stations.Count && stations.Count > 0)
+        {
+            _selectedStationIds.Clear();
+            _lastSelectionAnchorIndex = -1;
+        }
+        else
+        {
+            foreach (var s in stations)
+            {
+                _selectedStationIds.Add(s.Id);
+            }
+
+            _lastSelectionAnchorIndex = stations.Count > 0 ? 0 : -1;
+        }
+
+        SyncEditSelectionVisuals();
+    }
+
+    private async void BulkDeleteBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (XamlRoot is null || _selectedStationIds.Count == 0)
+        {
+            return;
+        }
+
+        var stations = _player.Stations;
+        var toDelete = _selectedStationIds.ToList();
+        if (stations.Count - toDelete.Count < 1)
+        {
+            ShowEditFeedback(_localization["Radio.Edit.KeepOneWarning"], isError: true);
+            return;
+        }
+
+        var dialog = new ContentDialog
+        {
+            Title = _localization["Radio.Edit.BulkDeleteConfirmTitle"],
+            Content = _localization.GetString("Radio.Edit.BulkDeleteConfirmBody", toDelete.Count),
+            PrimaryButtonText = _localization.GetString("Radio.Edit.BulkDeleteCount", toDelete.Count),
+            CloseButtonText = _localization["Common.Cancel"],
+            DefaultButton = ContentDialogButton.Close,
+            RequestedTheme = _theme.IsDarkTheme ? ElementTheme.Dark : ElementTheme.Light,
+            XamlRoot = XamlRoot
+        };
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        _selectedStationIds.Clear();
+        _lastSelectionAnchorIndex = -1;
+        await _player.RemoveStationsAsync(toDelete);
+        ShowEditFeedback(_localization.GetString("Radio.Edit.BulkDeletedFeedback", toDelete.Count));
     }
 
     private async void AddCustomBtn_Click(object sender, RoutedEventArgs e)

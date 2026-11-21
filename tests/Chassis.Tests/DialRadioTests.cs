@@ -251,4 +251,32 @@ public sealed class DialRadioTests : IDisposable
         var fromCode = RadioBackupImporter.ParseAny(code, share);
         Assert.Equal(4, fromCode.Count);
     }
+
+    [Fact]
+    public void StationListOperations_ReordersMultipleSelectedAndRemovesSafely()
+    {
+        var items = new[] { "A", "B", "C", "D", "E" }
+            .Select(id => new RadioStation(id, id, string.Empty, $"https://example.invalid/{id}", string.Empty, "\uE7F6", "#0078D4", 192))
+            .ToList();
+
+        // Move B and D before C (target index 2) -> [A, B, D, C, E]
+        var grouped = StationListOperations.ReorderStations(items, ["B", "D"], 2);
+        Assert.Equal(new[] { "A", "B", "D", "C", "E" }, grouped.Select(s => s.Id));
+
+        // Move A and B to the end (target index 5) -> [C, D, E, A, B]
+        var movedEnd = StationListOperations.ReorderStations(items, ["A", "B"], 5);
+        Assert.Equal(new[] { "C", "D", "E", "A", "B" }, movedEnd.Select(s => s.Id));
+
+        // Move C and E to the top (target index 0) -> [C, E, A, B, D]
+        var movedTop = StationListOperations.ReorderStations(items, ["C", "E"], 0);
+        Assert.Equal(new[] { "C", "E", "A", "B", "D" }, movedTop.Select(s => s.Id));
+
+        // Bulk remove B and D -> [A, C, E]
+        var removed = StationListOperations.RemoveStations(items, ["B", "D"]);
+        Assert.Equal(new[] { "A", "C", "E" }, removed.Select(s => s.Id));
+
+        // Guard: attempting to remove all items leaves list untouched (>=1 must remain)
+        var guardAll = StationListOperations.RemoveStations(items, ["A", "B", "C", "D", "E"]);
+        Assert.Equal(5, guardAll.Count);
+    }
 }

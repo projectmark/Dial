@@ -30,7 +30,9 @@ public interface IRadioPlayerService : IDisposable
     Task AddStationAsync(RadioStation station, CancellationToken ct = default);
     Task UpdateStationAsync(RadioStation station, CancellationToken ct = default);
     Task RemoveStationAsync(string stationId, CancellationToken ct = default);
+    Task RemoveStationsAsync(IReadOnlyCollection<string> stationIds, CancellationToken ct = default);
     Task MoveStationAsync(string stationId, int delta, CancellationToken ct = default);
+    Task MoveStationsAsync(IReadOnlyCollection<string> stationIds, int targetInsertionIndex, CancellationToken ct = default);
     Task ImportStationsAsync(IEnumerable<RadioStation> stations, bool replaceExisting = false, CancellationToken ct = default);
     bool IsFavorite(string streamUrlOrId);
 }
@@ -412,8 +414,18 @@ public sealed class RadioPlayerService : IRadioPlayerService
 
     public async Task RemoveStationAsync(string stationId, CancellationToken ct = default)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
         if (string.IsNullOrWhiteSpace(stationId))
+        {
+            return;
+        }
+
+        await RemoveStationsAsync(new[] { stationId }, ct).ConfigureAwait(false);
+    }
+
+    public async Task RemoveStationsAsync(IReadOnlyCollection<string> stationIds, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (stationIds is null || stationIds.Count == 0)
         {
             return;
         }
@@ -423,13 +435,16 @@ public sealed class RadioPlayerService : IRadioPlayerService
 
         lock (_gate)
         {
-            var removed = _stations.RemoveAll(s => string.Equals(s.Id, stationId, StringComparison.OrdinalIgnoreCase));
-            if (removed == 0)
+            var next = StationListOperations.RemoveStations(_stations, stationIds);
+            if (next.Count == _stations.Count)
             {
                 return;
             }
 
-            if (_activeStation is not null && string.Equals(_activeStation.Id, stationId, StringComparison.OrdinalIgnoreCase))
+            _stations = next;
+
+            if (_activeStation is not null &&
+                !_stations.Any(s => string.Equals(s.Id, _activeStation.Id, StringComparison.OrdinalIgnoreCase)))
             {
                 if (_state is RadioPlaybackState.Playing or RadioPlaybackState.Buffering)
                 {
@@ -481,6 +496,31 @@ public sealed class RadioPlayerService : IRadioPlayerService
             var item = _stations[idx];
             _stations.RemoveAt(idx);
             _stations.Insert(targetIdx, item);
+            snapshot = _stations.ToList();
+        }
+
+        await _stationStore.SaveAllAsync(StationsCollectionName, snapshot, ct).ConfigureAwait(false);
+        StationsChanged?.Invoke();
+    }
+
+    public async Task MoveStationsAsync(IReadOnlyCollection<string> stationIds, int targetInsertionIndex, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (stationIds is null || stationIds.Count == 0)
+        {
+            return;
+        }
+
+        List<RadioStation> snapshot;
+        lock (_gate)
+        {
+            var reordered = StationListOperations.ReorderStations(_stations, stationIds, targetInsertionIndex);
+            if (reordered.SequenceEqual(_stations))
+            {
+                return;
+            }
+
+            _stations = reordered;
             snapshot = _stations.ToList();
         }
 
