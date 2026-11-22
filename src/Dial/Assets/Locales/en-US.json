@@ -17,7 +17,7 @@
   "Tray.Unmute": "Unmute",
   "Tray.SleepTimerCancel": "Sleep timer ({0}m) — Cancel",
   "Tray.MinimizedNotification": "Dial keeps playing in the background from the system tray.",
-  "Radio.Status.Live": "LIVE",
+  "Radio.Status.Live": "ON AIR",
   "Radio.Status.Buffering": "BUFFERING",
   "Radio.Status.Stopped": "STOPPED",
   "Radio.Status.Error": "ERROR",

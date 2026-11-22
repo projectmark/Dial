@@ -17,6 +17,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Shapes;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
 using Windows.Storage.Pickers;
@@ -36,8 +37,21 @@ public sealed partial class HomeView : UserControl
         TextBlock TitleText,
         TextBlock? TaglineText,
         TextBlock? MetaText,
+        Border? MetaBadge,
+        Border? MetaGlow,
+        Grid? MetaDot,
+        Ellipse? MetaDotHalo,
+        Ellipse? MetaDotCore,
         Border? IconBox,
         FontIcon? IconGlyph);
+
+    private sealed record OnAirStudioPalette(
+        SolidColorBrush TextBrush,
+        SolidColorBrush DotCoreBrush,
+        SolidColorBrush DotHaloBrush,
+        SolidColorBrush BadgeBorderBrush,
+        RadialGradientBrush BadgeBgBrush,
+        RadialGradientBrush OuterGlowBrush);
 
     private sealed record EditRowVisual(
         string StationId,
@@ -85,6 +99,9 @@ public sealed partial class HomeView : UserControl
     private bool _isEditMode;
     private bool _isSingleColumn;
     private bool _isCompactTransport;
+    private OnAirStudioPalette? _lightOnAirPalette;
+    private OnAirStudioPalette? _darkOnAirPalette;
+    private SolidColorBrush? _transparentBrush;
 
     public HomeView()
     {
@@ -616,7 +633,7 @@ public sealed partial class HomeView : UserControl
                 wrapper.Children.Add(bottomDropIndicator);
 
                 StationsListPanel.Children.Add(wrapper);
-                _stationVisuals.Add(new StationRowVisual(station, null, accentPill, titleText, null, null, null, null));
+                _stationVisuals.Add(new StationRowVisual(station, null, accentPill, titleText, null, null, null, null, null, null, null, null, null));
                 _editRowVisuals.Add(new EditRowVisual(
                     station.Id,
                     i,
@@ -628,13 +645,8 @@ public sealed partial class HomeView : UserControl
             }
             else
             {
-                var metaText = new TextBlock
-                {
-                    FontSize = 11,
-                    FontWeight = FontWeights.SemiBold,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Visibility = alignment == "left" ? Visibility.Visible : Visibility.Collapsed
-                };
+                var (metaContainer, metaGlow, metaBadge, metaDot, metaDotHalo, metaDotCore, metaText) =
+                    CreateStationMetaBadge(isVisible: alignment == "left");
 
                 var rowGrid = new Grid { ColumnSpacing = 10 };
                 rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -643,10 +655,10 @@ public sealed partial class HomeView : UserControl
 
                 Grid.SetColumn(accentPill, 0);
                 Grid.SetColumn(titleText, 1);
-                Grid.SetColumn(metaText, 2);
+                Grid.SetColumn(metaContainer, 2);
                 rowGrid.Children.Add(accentPill);
                 rowGrid.Children.Add(titleText);
-                rowGrid.Children.Add(metaText);
+                rowGrid.Children.Add(metaContainer);
 
                 var capturedId = station.Id;
                 var rowBtn = new Button
@@ -669,7 +681,20 @@ public sealed partial class HomeView : UserControl
                     () => string.Equals(_player.Current.ActiveStation?.Id, capturedId, StringComparison.OrdinalIgnoreCase));
 
                 StationsListPanel.Children.Add(rowBtn);
-                _stationVisuals.Add(new StationRowVisual(station, rowBtn, accentPill, titleText, null, metaText, null, null));
+                _stationVisuals.Add(new StationRowVisual(
+                    station,
+                    rowBtn,
+                    accentPill,
+                    titleText,
+                    null,
+                    metaText,
+                    metaBadge,
+                    metaGlow,
+                    metaDot,
+                    metaDotHalo,
+                    metaDotCore,
+                    null,
+                    null));
             }
         }
     }
@@ -722,20 +747,16 @@ public sealed partial class HomeView : UserControl
                 TextWrapping = TextWrapping.Wrap
             };
 
-            var metaText = new TextBlock
-            {
-                FontSize = 11,
-                FontWeight = FontWeights.SemiBold,
-                VerticalAlignment = VerticalAlignment.Center
-            };
+            var (metaContainer, metaGlow, metaBadge, metaDot, metaDotHalo, metaDotCore, metaText) =
+                CreateStationMetaBadge();
 
             var titleRow = new Grid { ColumnSpacing = 8 };
             titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             Grid.SetColumn(titleText, 0);
-            Grid.SetColumn(metaText, 1);
+            Grid.SetColumn(metaContainer, 1);
             titleRow.Children.Add(titleText);
-            titleRow.Children.Add(metaText);
+            titleRow.Children.Add(metaContainer);
 
             var taglineText = new TextBlock
             {
@@ -778,10 +799,176 @@ public sealed partial class HomeView : UserControl
                 () => string.Equals(_player.Current.ActiveStation?.Id, capturedId, StringComparison.OrdinalIgnoreCase));
 
             StationsGrid.Children.Add(cardBtn);
-            _stationVisuals.Add(new StationRowVisual(station, cardBtn, accentPill, titleText, taglineText, metaText, iconBox, iconGlyph));
+            _stationVisuals.Add(new StationRowVisual(
+                station,
+                cardBtn,
+                accentPill,
+                titleText,
+                taglineText,
+                metaText,
+                metaBadge,
+                metaGlow,
+                metaDot,
+                metaDotHalo,
+                metaDotCore,
+                iconBox,
+                iconGlyph));
         }
 
         ArrangeStationGridLayout();
+    }
+
+    private static (Grid Container, Border Glow, Border Badge, Grid Dot, Ellipse DotHalo, Ellipse DotCore, TextBlock Text) CreateStationMetaBadge(bool isVisible = true)
+    {
+        var glow = new Border
+        {
+            CornerRadius = new CornerRadius(14),
+            Margin = new Thickness(-14, -7, -14, -7),
+            IsHitTestVisible = false,
+            Visibility = Visibility.Collapsed
+        };
+
+        var dotHalo = new Ellipse
+        {
+            Width = 10,
+            Height = 10,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var dotCore = new Ellipse
+        {
+            Width = 5,
+            Height = 5,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var dotGrid = new Grid
+        {
+            Width = 10,
+            Height = 10,
+            VerticalAlignment = VerticalAlignment.Center,
+            Visibility = Visibility.Collapsed
+        };
+        dotGrid.Children.Add(dotHalo);
+        dotGrid.Children.Add(dotCore);
+
+        var metaText = new TextBlock
+        {
+            FontSize = 11,
+            FontWeight = FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var badgeContent = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 5,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        badgeContent.Children.Add(dotGrid);
+        badgeContent.Children.Add(metaText);
+
+        var badge = new Border
+        {
+            CornerRadius = new CornerRadius(6),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(8, 2, 8, 2),
+            Margin = new Thickness(0, -2, 0, -2),
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = badgeContent
+        };
+
+        var container = new Grid
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed
+        };
+        container.Children.Add(glow);
+        container.Children.Add(badge);
+
+        return (container, glow, badge, dotGrid, dotHalo, dotCore, metaText);
+    }
+
+    private OnAirStudioPalette GetOnAirStudioPalette()
+        => _theme.IsDarkTheme
+            ? (_darkOnAirPalette ??= CreateOnAirStudioPalette(isDark: true))
+            : (_lightOnAirPalette ??= CreateOnAirStudioPalette(isDark: false));
+
+    private static OnAirStudioPalette CreateOnAirStudioPalette(bool isDark)
+    {
+        var textColor = isDark
+            ? Color.FromArgb(0xFF, 0xFF, 0x5C, 0x64)
+            : Color.FromArgb(0xFF, 0xCC, 0x14, 0x1D);
+        var dotCoreColor = isDark
+            ? Color.FromArgb(0xFF, 0xFF, 0x3B, 0x44)
+            : Color.FromArgb(0xFF, 0xE6, 0x19, 0x24);
+        var dotHaloColor = isDark
+            ? Color.FromArgb(0x58, 0xFF, 0x2E, 0x38)
+            : Color.FromArgb(0x45, 0xFF, 0x24, 0x2E);
+        var badgeBorderColor = isDark
+            ? Color.FromArgb(0x68, 0xFF, 0x4D, 0x57)
+            : Color.FromArgb(0x45, 0xE0, 0x1E, 0x28);
+
+        var badgeBg = new RadialGradientBrush
+        {
+            Center = new Point(0.5, 0.5),
+            GradientOrigin = new Point(0.5, 0.5),
+            RadiusX = 0.65,
+            RadiusY = 0.75
+        };
+        badgeBg.GradientStops.Add(new GradientStop
+        {
+            Offset = 0.0,
+            Color = isDark ? Color.FromArgb(0x36, 0xFF, 0x29, 0x34) : Color.FromArgb(0x26, 0xFF, 0x2A, 0x32)
+        });
+        badgeBg.GradientStops.Add(new GradientStop
+        {
+            Offset = 0.7,
+            Color = isDark ? Color.FromArgb(0x22, 0xFF, 0x24, 0x2E) : Color.FromArgb(0x16, 0xFF, 0x2A, 0x32)
+        });
+        badgeBg.GradientStops.Add(new GradientStop
+        {
+            Offset = 1.0,
+            Color = isDark ? Color.FromArgb(0x16, 0xD9, 0x18, 0x22) : Color.FromArgb(0x0E, 0xE6, 0x19, 0x24)
+        });
+
+        var outerGlow = new RadialGradientBrush
+        {
+            Center = new Point(0.5, 0.5),
+            GradientOrigin = new Point(0.5, 0.5),
+            RadiusX = 0.5,
+            RadiusY = 0.5
+        };
+        outerGlow.GradientStops.Add(new GradientStop
+        {
+            Offset = 0.0,
+            Color = isDark ? Color.FromArgb(0x54, 0xFF, 0x24, 0x2E) : Color.FromArgb(0x46, 0xFF, 0x24, 0x2E)
+        });
+        outerGlow.GradientStops.Add(new GradientStop
+        {
+            Offset = 0.45,
+            Color = isDark ? Color.FromArgb(0x2A, 0xFF, 0x2A, 0x34) : Color.FromArgb(0x22, 0xFF, 0x2E, 0x36)
+        });
+        outerGlow.GradientStops.Add(new GradientStop
+        {
+            Offset = 0.78,
+            Color = isDark ? Color.FromArgb(0x0E, 0xFF, 0x33, 0x3B) : Color.FromArgb(0x0B, 0xFF, 0x38, 0x40)
+        });
+        outerGlow.GradientStops.Add(new GradientStop
+        {
+            Offset = 1.0,
+            Color = Color.FromArgb(0x00, 0xFF, 0x38, 0x40)
+        });
+
+        return new OnAirStudioPalette(
+            TextBrush: new SolidColorBrush(textColor),
+            DotCoreBrush: new SolidColorBrush(dotCoreColor),
+            DotHaloBrush: new SolidColorBrush(dotHaloColor),
+            BadgeBorderBrush: new SolidColorBrush(badgeBorderColor),
+            BadgeBgBrush: badgeBg,
+            OuterGlowBrush: outerGlow);
     }
 
     private Button CreateIconActionButton(string glyph, string tooltip, bool isEnabled, Func<Task> action)
@@ -892,19 +1079,40 @@ public sealed partial class HomeView : UserControl
         HeroIconBox.Background = accentTint;
         HeroIconBox.BorderBrush = accent;
 
-        var (statusLabel, statusBrush) = snapshot.State switch
-        {
-            RadioPlaybackState.Playing => (_localization["Radio.Status.Live"], _theme.GetSuccessBrush()),
-            RadioPlaybackState.Buffering => (_localization["Radio.Status.Buffering"], _theme.GetCautionBrush()),
-            RadioPlaybackState.Error => (_localization["Radio.Status.Error"], _theme.GetCriticalBrush()),
-            _ => (_localization["Radio.Status.Stopped"], secondary)
-        };
+        var onAir = GetOnAirStudioPalette();
+        var transparent = _transparentBrush ??= new SolidColorBrush(Colors.Transparent);
 
-        StatusBadgeText.Text = statusLabel;
-        StatusBadgeText.Foreground = statusBrush;
-        StatusDot.Fill = statusBrush;
-        StatusBadge.BorderBrush = statusBrush;
-        StatusBadge.Background = _theme.GetCardBackgroundBrush();
+        if (snapshot.State == RadioPlaybackState.Playing)
+        {
+            StatusBadgeText.Text = _localization["Radio.Status.Live"];
+            StatusBadgeText.CharacterSpacing = 45;
+            StatusBadgeText.Foreground = onAir.TextBrush;
+            StatusDot.Fill = onAir.DotCoreBrush;
+            StatusDotHalo.Fill = onAir.DotHaloBrush;
+            StatusDotHalo.Visibility = Visibility.Visible;
+            StatusBadge.BorderBrush = onAir.BadgeBorderBrush;
+            StatusBadge.Background = onAir.BadgeBgBrush;
+            StatusBadgeGlow.Background = onAir.OuterGlowBrush;
+            StatusBadgeGlow.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            var (statusLabel, statusBrush) = snapshot.State switch
+            {
+                RadioPlaybackState.Buffering => (_localization["Radio.Status.Buffering"], _theme.GetCautionBrush()),
+                RadioPlaybackState.Error => (_localization["Radio.Status.Error"], _theme.GetCriticalBrush()),
+                _ => (_localization["Radio.Status.Stopped"], secondary)
+            };
+
+            StatusBadgeText.Text = statusLabel;
+            StatusBadgeText.CharacterSpacing = 0;
+            StatusBadgeText.Foreground = statusBrush;
+            StatusDot.Fill = statusBrush;
+            StatusDotHalo.Visibility = Visibility.Collapsed;
+            StatusBadge.BorderBrush = statusBrush;
+            StatusBadge.Background = _theme.GetCardBackgroundBrush();
+            StatusBadgeGlow.Visibility = Visibility.Collapsed;
+        }
 
         PreviewBadge.Visibility = snapshot.IsPreview ? Visibility.Visible : Visibility.Collapsed;
         PreviewBadge.BorderBrush = accent;
@@ -998,19 +1206,63 @@ public sealed partial class HomeView : UserControl
 
             if (item.MetaText is not null)
             {
-                if (isSelected)
+                if (isSelected && isLiveOrBuffering)
                 {
-                    item.MetaText.Text = isLiveOrBuffering
-                        ? _localization["Radio.Status.Live"]
-                        : _localization["Radio.ActiveBadge"];
-                    item.MetaText.Foreground = isLiveOrBuffering ? _theme.GetSuccessBrush() : accent;
+                    item.MetaText.Text = _localization["Radio.Status.Live"];
+                    item.MetaText.CharacterSpacing = 45;
+                    item.MetaText.Foreground = onAir.TextBrush;
+
+                    if (item.MetaBadge is not null)
+                    {
+                        item.MetaBadge.Background = onAir.BadgeBgBrush;
+                        item.MetaBadge.BorderBrush = onAir.BadgeBorderBrush;
+                    }
+
+                    if (item.MetaGlow is not null)
+                    {
+                        item.MetaGlow.Background = onAir.OuterGlowBrush;
+                        item.MetaGlow.Visibility = Visibility.Visible;
+                    }
+
+                    if (item.MetaDot is not null && item.MetaDotHalo is not null && item.MetaDotCore is not null)
+                    {
+                        item.MetaDotHalo.Fill = onAir.DotHaloBrush;
+                        item.MetaDotCore.Fill = onAir.DotCoreBrush;
+                        item.MetaDot.Visibility = Visibility.Visible;
+                    }
                 }
                 else
                 {
-                    item.MetaText.Text = item.Station.BitrateKbps > 0
-                        ? $"{item.Station.BitrateKbps}k"
-                        : item.Station.CountryCode;
-                    item.MetaText.Foreground = secondary;
+                    if (isSelected)
+                    {
+                        item.MetaText.Text = _localization["Radio.ActiveBadge"];
+                        item.MetaText.Foreground = accent;
+                    }
+                    else
+                    {
+                        item.MetaText.Text = item.Station.BitrateKbps > 0
+                            ? $"{item.Station.BitrateKbps}k"
+                            : item.Station.CountryCode;
+                        item.MetaText.Foreground = secondary;
+                    }
+
+                    item.MetaText.CharacterSpacing = 0;
+
+                    if (item.MetaBadge is not null)
+                    {
+                        item.MetaBadge.Background = transparent;
+                        item.MetaBadge.BorderBrush = transparent;
+                    }
+
+                    if (item.MetaGlow is not null)
+                    {
+                        item.MetaGlow.Visibility = Visibility.Collapsed;
+                    }
+
+                    if (item.MetaDot is not null)
+                    {
+                        item.MetaDot.Visibility = Visibility.Collapsed;
+                    }
                 }
             }
         }

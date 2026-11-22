@@ -17,7 +17,7 @@
   "Tray.Unmute": "Dempen opheffen",
   "Tray.SleepTimerCancel": "Slaaptimer ({0} min) — Annuleren",
   "Tray.MinimizedNotification": "Dial speelt door in de achtergrond vanuit het systeemvak.",
-  "Radio.Status.Live": "LIVE",
+  "Radio.Status.Live": "ON AIR",
   "Radio.Status.Buffering": "BUFFEREN",
   "Radio.Status.Stopped": "GESTOPT",
   "Radio.Status.Error": "FOUT",
