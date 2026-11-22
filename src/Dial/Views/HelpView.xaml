@@ -24,7 +24,17 @@
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                     <Button x:Name="DocsModeBtn" Height="34" Padding="14,6" CornerRadius="17" Click="DocsModeBtn_Click" />
-                    <Button x:Name="ChangelogModeBtn" Height="34" Padding="14,6" CornerRadius="17" Click="ChangelogModeBtn_Click" />
+                    <Button x:Name="ChangelogModeBtn" Height="34" Padding="14,6" CornerRadius="17" Click="ChangelogModeBtn_Click">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <TextBlock x:Name="ChangelogModeLabel" VerticalAlignment="Center" />
+                            <Ellipse
+                                x:Name="ChangelogUnreadDot"
+                                Width="7"
+                                Height="7"
+                                VerticalAlignment="Center"
+                                Visibility="Collapsed" />
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
             </Grid>
 

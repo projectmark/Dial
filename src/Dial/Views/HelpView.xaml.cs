@@ -53,6 +53,7 @@ public sealed partial class HelpView : UserControl
     {
         if (!_isSubscribed)
         {
+            _changelog.UnreadStateChanged += OnChangelogUnreadChanged;
             _theme.ThemeChanged += ApplyThemeVisuals;
             _localization.LanguageChanged += OnLanguageChanged;
             _isSubscribed = true;
@@ -65,10 +66,26 @@ public sealed partial class HelpView : UserControl
     {
         if (_isSubscribed)
         {
+            _changelog.UnreadStateChanged -= OnChangelogUnreadChanged;
             _theme.ThemeChanged -= ApplyThemeVisuals;
             _localization.LanguageChanged -= OnLanguageChanged;
             _isSubscribed = false;
         }
+    }
+
+    private void OnChangelogUnreadChanged(bool _)
+        => DispatcherQueue?.TryEnqueue(() =>
+        {
+            if (_isSubscribed)
+            {
+                UpdateChangelogUnreadIndicator();
+            }
+        });
+
+    private void UpdateChangelogUnreadIndicator()
+    {
+        ChangelogUnreadDot.Visibility = _changelog.HasNewVersion ? Visibility.Visible : Visibility.Collapsed;
+        ChangelogUnreadDot.Fill = _theme.GetAdaptiveAccentBrush();
     }
 
     private void OnLanguageChanged(string _) => RefreshLocalizedUi();
@@ -90,6 +107,7 @@ public sealed partial class HelpView : UserControl
             RefreshArticles();
         }
 
+        UpdateChangelogUnreadIndicator();
         _theme.RefreshInteractiveButton(DocsModeBtn);
         _theme.RefreshInteractiveButton(ChangelogModeBtn);
     }
@@ -111,7 +129,7 @@ public sealed partial class HelpView : UserControl
         HeaderTitle.Text = _localization["Help.Title"];
         HeaderSubtitle.Text = _localization["Help.Subtitle"];
         DocsModeBtn.Content = _localization["Help.Tab.Docs"];
-        ChangelogModeBtn.Content = _localization["Help.Tab.Changelog"];
+        ChangelogModeLabel.Text = _localization["Help.Tab.Changelog"];
         SearchBox.PlaceholderText = _localization["Help.SearchPlaceholder"];
         CopyRefButton.Content = _localization["Help.CopyReference"];
         AutomationProperties.SetName(SearchBox, _localization["Help.SearchPlaceholder"]);
@@ -429,6 +447,7 @@ public sealed partial class HelpView : UserControl
         _theme.RefreshInteractiveButton(DocsModeBtn);
         _theme.RefreshInteractiveButton(ChangelogModeBtn);
         _theme.RefreshInteractiveButton(CopyRefButton);
+        UpdateChangelogUnreadIndicator();
 
         if (_isChangelogMode)
         {
