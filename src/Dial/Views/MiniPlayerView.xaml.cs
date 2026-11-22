@@ -25,6 +25,8 @@ public sealed partial class MiniPlayerView : UserControl
 
     private bool _isSubscribed;
     private bool _isSyncingVolume;
+    private bool _isUpdatingSliderFromInput;
+    private bool? _lastRenderedMuted;
     private float _smoothedLeft;
     private float _smoothedRight;
 
@@ -62,6 +64,7 @@ public sealed partial class MiniPlayerView : UserControl
         if (!_isSubscribed)
         {
             _player.StateChanged += OnPlayerStateChanged;
+            _player.VolumeChanged += OnPlayerVolumeChanged;
             _sleepTimer.RemainingChanged += OnSleepRemainingChanged;
             _theme.ThemeChanged += OnThemeChanged;
             _localization.LanguageChanged += OnLanguageChanged;
@@ -79,6 +82,7 @@ public sealed partial class MiniPlayerView : UserControl
         if (_isSubscribed)
         {
             _player.StateChanged -= OnPlayerStateChanged;
+            _player.VolumeChanged -= OnPlayerVolumeChanged;
             _sleepTimer.RemainingChanged -= OnSleepRemainingChanged;
             _theme.ThemeChanged -= OnThemeChanged;
             _localization.LanguageChanged -= OnLanguageChanged;
@@ -120,6 +124,15 @@ public sealed partial class MiniPlayerView : UserControl
             if (_isSubscribed)
             {
                 RenderState(snapshot);
+            }
+        });
+
+    private void OnPlayerVolumeChanged(double volume, bool isMuted)
+        => DispatcherQueue?.TryEnqueue(() =>
+        {
+            if (_isSubscribed && !_isUpdatingSliderFromInput)
+            {
+                ApplyVolumeUi(volume, isMuted, updateSlider: true);
             }
         });
 
@@ -214,13 +227,9 @@ public sealed partial class MiniPlayerView : UserControl
         var muteLabel = snapshot.IsMuted ? _localization["Radio.Unmute"] : _localization["Radio.Mute"];
         AutomationProperties.SetName(MuteBtn, muteLabel);
         ToolTipService.SetToolTip(MuteBtn, muteLabel);
+        _lastRenderedMuted = snapshot.IsMuted;
 
-        var percent = (int)Math.Round(snapshot.Volume * 100);
-        _isSyncingVolume = true;
-        VolumeSlider.Value = percent;
-        _isSyncingVolume = false;
-        VolumeValueText.Text = $"{percent}%";
-        VolumeValueText.Foreground = snapshot.IsMuted ? _theme.GetTextDisabledBrush() : secondary;
+        ApplyVolumeUi(snapshot.Volume, snapshot.IsMuted, updateSlider: !_isUpdatingSliderFromInput);
 
         UpdateSleepReadout(_sleepTimer.IsActive ? _sleepTimer.Remaining : null);
 
@@ -262,6 +271,30 @@ public sealed partial class MiniPlayerView : UserControl
     private void MuteBtn_Click(object sender, RoutedEventArgs e)
         => _player.ToggleMute();
 
+    private void ApplyVolumeUi(double volume, bool isMuted, bool updateSlider)
+    {
+        var percent = (int)Math.Round(volume * 100);
+        if (updateSlider && Math.Abs(VolumeSlider.Value - percent) >= 0.5)
+        {
+            _isSyncingVolume = true;
+            VolumeSlider.Value = percent;
+            _isSyncingVolume = false;
+        }
+
+        VolumeValueText.Text = $"{percent}%";
+        VolumeValueText.Foreground = isMuted ? _theme.GetTextDisabledBrush() : _theme.GetTextSecondaryBrush();
+
+        if (_lastRenderedMuted != isMuted)
+        {
+            _lastRenderedMuted = isMuted;
+            MuteGlyph.Glyph = isMuted ? "\uE74F" : "\uE767";
+            var muteLabel = isMuted ? _localization["Radio.Unmute"] : _localization["Radio.Mute"];
+            AutomationProperties.SetName(MuteBtn, muteLabel);
+            ToolTipService.SetToolTip(MuteBtn, muteLabel);
+            _theme.RefreshInteractiveButton(MuteBtn);
+        }
+    }
+
     private void VolumeSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
     {
         if (_isSyncingVolume)
@@ -269,7 +302,17 @@ public sealed partial class MiniPlayerView : UserControl
             return;
         }
 
-        _player.SetVolume(e.NewValue / 100.0);
+        _isUpdatingSliderFromInput = true;
+        try
+        {
+            var percent = (int)Math.Round(e.NewValue);
+            VolumeValueText.Text = $"{percent}%";
+            _player.SetVolume(e.NewValue / 100.0);
+        }
+        finally
+        {
+            _isUpdatingSliderFromInput = false;
+        }
     }
 
     private void PinBtn_Click(object sender, RoutedEventArgs e)

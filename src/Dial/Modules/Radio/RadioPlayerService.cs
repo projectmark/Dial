@@ -16,6 +16,7 @@ public interface IRadioPlayerService : IDisposable
     IReadOnlyList<RadioStation> Stations { get; }
     RadioStateSnapshot Current { get; }
     event Action<RadioStateSnapshot>? StateChanged;
+    event Action<double, bool>? VolumeChanged;
     event Action? StationsChanged;
 
     Task InitializeAsync(CancellationToken ct = default);
@@ -54,6 +55,7 @@ public sealed class RadioPlayerService : IRadioPlayerService
     private readonly IIcyMetadataReader _icyReader;
     private readonly MediaPlayer _mediaPlayer;
     private readonly Lock _gate = new();
+    private readonly Timer _volumePersistTimer;
 
     private List<RadioStation> _stations;
     private RadioStation? _activeStation;
@@ -62,6 +64,9 @@ public sealed class RadioPlayerService : IRadioPlayerService
     private string? _errorMessage;
     private double _volume;
     private bool _isMuted;
+    private double _pendingVolume;
+    private bool _pendingMuted;
+    private bool _hasPendingVolumePersist;
     private bool _isPreview;
     private bool _usingFallback;
     private long _playbackGeneration;
@@ -91,6 +96,9 @@ public sealed class RadioPlayerService : IRadioPlayerService
             ?? _stations[0];
         _volume = Math.Clamp(_settings.GetOption(VolumeOptionKey, 0.8), 0.0, 1.0);
         _isMuted = _settings.GetOption(MuteOptionKey, false);
+        _pendingVolume = _volume;
+        _pendingMuted = _isMuted;
+        _volumePersistTimer = new Timer(_ => FlushPendingVolumePersistence(), null, Timeout.Infinite, Timeout.Infinite);
 
         _bufferSeconds = AudioBufferSizing.NormalizeSeconds(
             _settings.GetOption(AudioBufferSizing.OptionKey, AudioBufferSizing.DefaultBufferSeconds));
@@ -139,6 +147,7 @@ public sealed class RadioPlayerService : IRadioPlayerService
     }
 
     public event Action<RadioStateSnapshot>? StateChanged;
+    public event Action<double, bool>? VolumeChanged;
     public event Action? StationsChanged;
 
     public async Task InitializeAsync(CancellationToken ct = default)
@@ -309,20 +318,40 @@ public sealed class RadioPlayerService : IRadioPlayerService
         }
 
         var clamped = Math.Clamp(volume, 0.0, 1.0);
+        bool muted;
+        bool muteChanged;
+
         lock (_gate)
         {
-            _volume = clamped;
-            if (clamped > 0 && _isMuted)
+            var nextMuted = clamped > 0 && _isMuted ? false : _isMuted;
+            muteChanged = nextMuted != _isMuted;
+            if (!muteChanged && Math.Abs(clamped - _volume) < 0.0001)
             {
-                _isMuted = false;
+                return;
             }
+
+            _volume = clamped;
+            _isMuted = nextMuted;
+            muted = nextMuted;
+            _pendingVolume = clamped;
+            _pendingMuted = nextMuted;
+            _hasPendingVolumePersist = true;
         }
 
         _mediaPlayer.Volume = clamped;
-        _mediaPlayer.IsMuted = _isMuted;
-        _settings.SetOption(VolumeOptionKey, clamped, autoSave: false);
-        _settings.SetOption(MuteOptionKey, _isMuted, autoSave: true);
-        NotifyStateChanged();
+        if (muteChanged)
+        {
+            _mediaPlayer.IsMuted = muted;
+        }
+
+        // Debounce JSON settings persistence so continuous slider drags stay off disk and off the UI thread.
+        _volumePersistTimer.Change(250, Timeout.Infinite);
+        VolumeChanged?.Invoke(clamped, muted);
+
+        if (muteChanged)
+        {
+            NotifyStateChanged();
+        }
     }
 
     public void ToggleMute()
@@ -332,16 +361,47 @@ public sealed class RadioPlayerService : IRadioPlayerService
             return;
         }
 
+        double volume;
         bool muted;
         lock (_gate)
         {
             _isMuted = !_isMuted;
             muted = _isMuted;
+            volume = _volume;
+            _pendingMuted = muted;
         }
 
         _mediaPlayer.IsMuted = muted;
         _settings.SetOption(MuteOptionKey, muted);
+        VolumeChanged?.Invoke(volume, muted);
         NotifyStateChanged();
+    }
+
+    private void FlushPendingVolumePersistence()
+    {
+        double volume;
+        bool muted;
+        lock (_gate)
+        {
+            if (!_hasPendingVolumePersist)
+            {
+                return;
+            }
+
+            _hasPendingVolumePersist = false;
+            volume = _pendingVolume;
+            muted = _pendingMuted;
+        }
+
+        try
+        {
+            _settings.SetOption(VolumeOptionKey, volume, autoSave: false);
+            _settings.SetOption(MuteOptionKey, muted, autoSave: true);
+        }
+        catch
+        {
+            // Ignore transient settings write errors during background flush or shutdown.
+        }
     }
 
     public async Task AddStationAsync(RadioStation station, CancellationToken ct = default)
@@ -1178,6 +1238,8 @@ public sealed class RadioPlayerService : IRadioPlayerService
         }
 
         _disposed = true;
+        _volumePersistTimer.Dispose();
+        FlushPendingVolumePersistence();
         _settings.SettingsChanged -= OnSettingsChanged;
         _icyReader.NowPlayingChanged -= OnNowPlayingChanged;
         _icyReader.Dispose();

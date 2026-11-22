@@ -213,9 +213,10 @@
                                     Width="120"
                                     Minimum="0"
                                     Maximum="100"
-                                    StepFrequency="2"
-                                    SmallChange="2"
+                                    StepFrequency="1"
+                                    SmallChange="1"
                                     LargeChange="10"
+                                    IsThumbToolTipEnabled="False"
                                     VerticalAlignment="Center"
                                     ValueChanged="VolumeSlider_ValueChanged" />
 

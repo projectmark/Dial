@@ -60,6 +60,9 @@ public sealed partial class HomeView : UserControl
     private List<string> _draggedStationIds = [];
     private int _lastSelectionAnchorIndex = -1;
     private bool _isSyncingVolume;
+    private bool _isUpdatingSliderFromInput;
+    private bool? _lastRenderedMuted;
+    private (string ViewMode, bool ShowNumbers, string Alignment, string FontSize) _lastListLayoutSignature;
     private bool _isSubscribed;
     private bool _isEditMode;
     private bool _isSingleColumn;
@@ -110,6 +113,7 @@ public sealed partial class HomeView : UserControl
         if (!_isSubscribed)
         {
             _player.StateChanged += OnPlayerStateChanged;
+            _player.VolumeChanged += OnPlayerVolumeChanged;
             _player.StationsChanged += OnStationsChanged;
             _sleepTimer.RemainingChanged += OnSleepRemainingChanged;
             _stats.SessionElapsedChanged += OnSessionElapsedChanged;
@@ -129,6 +133,7 @@ public sealed partial class HomeView : UserControl
         if (_isSubscribed)
         {
             _player.StateChanged -= OnPlayerStateChanged;
+            _player.VolumeChanged -= OnPlayerVolumeChanged;
             _player.StationsChanged -= OnStationsChanged;
             _sleepTimer.RemainingChanged -= OnSleepRemainingChanged;
             _stats.SessionElapsedChanged -= OnSessionElapsedChanged;
@@ -145,6 +150,15 @@ public sealed partial class HomeView : UserControl
             if (_isSubscribed)
             {
                 RenderState(snapshot);
+            }
+        });
+
+    private void OnPlayerVolumeChanged(double volume, bool isMuted)
+        => DispatcherQueue?.TryEnqueue(() =>
+        {
+            if (_isSubscribed && !_isUpdatingSliderFromInput)
+            {
+                ApplyVolumeUi(volume, isMuted, updateSlider: true);
             }
         });
 
@@ -179,12 +193,25 @@ public sealed partial class HomeView : UserControl
     private void OnSettingsChanged(AppSettings _)
         => DispatcherQueue?.TryEnqueue(() =>
         {
-            if (_isSubscribed)
+            if (!_isSubscribed)
+            {
+                return;
+            }
+
+            var currentSig = ReadListLayoutSignature();
+            if (currentSig != _lastListLayoutSignature)
             {
                 RebuildStationsUi();
                 RenderState(_player.Current);
             }
         });
+
+    private (string ViewMode, bool ShowNumbers, string Alignment, string FontSize) ReadListLayoutSignature()
+        => (
+            _settings.GetOption(RadioModule.ViewModeOptionKey, "list"),
+            _settings.GetOption(RadioModule.ShowNumbersOptionKey, true),
+            _settings.GetOption(RadioModule.AlignmentOptionKey, "left"),
+            _settings.GetOption(RadioModule.FontSizeOptionKey, "normal"));
 
     private void OnThemeChanged() => RenderState(_player.Current);
 
@@ -243,7 +270,8 @@ public sealed partial class HomeView : UserControl
             _lastSelectionAnchorIndex = stations.Count - 1;
         }
 
-        var viewMode = _settings.GetOption(RadioModule.ViewModeOptionKey, "list");
+        _lastListLayoutSignature = ReadListLayoutSignature();
+        var viewMode = _lastListLayoutSignature.ViewMode;
         var useGrid = !_isEditMode && string.Equals(viewMode, "grid", StringComparison.OrdinalIgnoreCase);
 
         StationsListPanel.Visibility = useGrid ? Visibility.Collapsed : Visibility.Visible;
@@ -844,15 +872,11 @@ public sealed partial class HomeView : UserControl
         var muteLabel = snapshot.IsMuted ? _localization["Radio.Unmute"] : _localization["Radio.Mute"];
         AutomationProperties.SetName(MuteBtn, muteLabel);
         ToolTipService.SetToolTip(MuteBtn, muteLabel);
+        _lastRenderedMuted = snapshot.IsMuted;
 
         EditModeGlyph.Glyph = _isEditMode ? "\uE711" : "\uE70F";
 
-        var percent = (int)Math.Round(snapshot.Volume * 100);
-        _isSyncingVolume = true;
-        VolumeSlider.Value = percent;
-        _isSyncingVolume = false;
-        VolumeValueText.Text = $"{percent}%";
-        VolumeValueText.Foreground = snapshot.IsMuted ? _theme.GetTextDisabledBrush() : secondary;
+        ApplyVolumeUi(snapshot.Volume, snapshot.IsMuted, updateSlider: !_isUpdatingSliderFromInput);
 
         _theme.RefreshInteractiveButton(PrevStationBtn);
         _theme.RefreshInteractiveButton(PlayPauseBtn);
@@ -1210,6 +1234,30 @@ public sealed partial class HomeView : UserControl
     private void MuteBtn_Click(object sender, RoutedEventArgs e)
         => _player.ToggleMute();
 
+    private void ApplyVolumeUi(double volume, bool isMuted, bool updateSlider)
+    {
+        var percent = (int)Math.Round(volume * 100);
+        if (updateSlider && Math.Abs(VolumeSlider.Value - percent) >= 0.5)
+        {
+            _isSyncingVolume = true;
+            VolumeSlider.Value = percent;
+            _isSyncingVolume = false;
+        }
+
+        VolumeValueText.Text = $"{percent}%";
+        VolumeValueText.Foreground = isMuted ? _theme.GetTextDisabledBrush() : _theme.GetTextSecondaryBrush();
+
+        if (_lastRenderedMuted != isMuted)
+        {
+            _lastRenderedMuted = isMuted;
+            MuteGlyph.Glyph = isMuted ? "\uE74F" : "\uE767";
+            var muteLabel = isMuted ? _localization["Radio.Unmute"] : _localization["Radio.Mute"];
+            AutomationProperties.SetName(MuteBtn, muteLabel);
+            ToolTipService.SetToolTip(MuteBtn, muteLabel);
+            _theme.RefreshInteractiveButton(MuteBtn);
+        }
+    }
+
     private void VolumeSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
     {
         if (_isSyncingVolume)
@@ -1217,7 +1265,17 @@ public sealed partial class HomeView : UserControl
             return;
         }
 
-        _player.SetVolume(e.NewValue / 100.0);
+        _isUpdatingSliderFromInput = true;
+        try
+        {
+            var percent = (int)Math.Round(e.NewValue);
+            VolumeValueText.Text = $"{percent}%";
+            _player.SetVolume(e.NewValue / 100.0);
+        }
+        finally
+        {
+            _isUpdatingSliderFromInput = false;
+        }
     }
 
     private void HomeScrollViewer_ViewChanged(object sender, ScrollViewerViewChangedEventArgs e)
