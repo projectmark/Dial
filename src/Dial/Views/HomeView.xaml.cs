@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Numerics;
 using Chassis.Core.Data;
 using Chassis.Core.Localization;
 using Chassis.Core.Settings;
@@ -7,11 +8,14 @@ using Chassis.UI.Theme;
 using Dial.Modules.Radio;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI;
+using Microsoft.UI.Composition;
 using Microsoft.UI.Input;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Hosting;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
@@ -44,6 +48,9 @@ public sealed partial class HomeView : UserControl
         Border BottomDropIndicator,
         FontIcon GripIcon);
 
+    private const double StickyTopMargin = 12.0;
+    private const float StickyTopClipInset = 16.0f;
+
     private static readonly int[] SleepPresetMinutes = [15, 30, 45, 60, 120, 240, 360];
 
     private readonly IRadioPlayerService _player;
@@ -66,6 +73,14 @@ public sealed partial class HomeView : UserControl
     private (string ViewMode, bool ShowNumbers, string Alignment, string FontSize) _lastListLayoutSignature;
     private string? _lastRenderedCulture;
     private List<(string Id, string Name, string StreamUrl)> _lastRenderedStations = [];
+    private CompositionPropertySet? _scrollManipulationProps;
+    private Visual? _editToolbarVisual;
+    private ExpressionAnimation? _stickyTranslationAnimation;
+    private InsetClip? _scrollViewerClip;
+    private ExpressionAnimation? _scrollClipAnimation;
+    private double _stickyThreshold;
+    private double _lastSyncedXamlOffset;
+    private bool _isStickyCompositionActive;
     private bool _isSubscribed;
     private bool _isEditMode;
     private bool _isSingleColumn;
@@ -861,7 +876,9 @@ public sealed partial class HomeView : UserControl
             ? Color.FromArgb(0xF2, 0x24, 0x24, 0x24)
             : Color.FromArgb(0xF5, 0xF7, 0xF8, 0xFA));
         EditToolbar.BorderBrush = _theme.GetCardBorderBrush();
+        StickyToolbarOverlay.Visibility = _isEditMode ? Visibility.Visible : Visibility.Collapsed;
         EditToolbar.Visibility = _isEditMode ? Visibility.Visible : Visibility.Collapsed;
+        EditToolbarAnchor.Visibility = _isEditMode ? Visibility.Visible : Visibility.Collapsed;
         StationsHeading.Foreground = primary;
         UpdateStickyEditToolbar();
 
@@ -1373,28 +1390,158 @@ public sealed partial class HomeView : UserControl
     }
 
     private void HomeScrollViewer_ViewChanged(object sender, ScrollViewerViewChangedEventArgs e)
-        => UpdateStickyEditToolbar();
+    {
+        if (!_isEditMode || EditToolbar.Visibility != Visibility.Visible || !_isStickyCompositionActive)
+        {
+            return;
+        }
+
+        // During active scrolling (e.IsIntermediate == true), let the Windows Compositor
+        // ExpressionAnimation drive 100% of the visual position at screen refresh rate
+        // without UI-thread property updates that could desynchronize frames.
+        if (!e.IsIntermediate)
+        {
+            SyncStickyXamlOffset();
+        }
+    }
 
     private void StickyLayoutAnchor_SizeChanged(object sender, SizeChangedEventArgs e)
         => UpdateStickyEditToolbar();
 
+    private void EditToolbar_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (_isEditMode && e.NewSize.Height > 0 && Math.Abs(EditToolbarAnchor.Height - e.NewSize.Height) > 0.5)
+        {
+            EditToolbarAnchor.Height = e.NewSize.Height;
+        }
+
+        UpdateStickyEditToolbar();
+    }
+
+    private void EditToolbar_PointerEntered(object sender, PointerRoutedEventArgs e)
+    {
+        if (_isEditMode && _isStickyCompositionActive)
+        {
+            SyncStickyXamlOffset();
+        }
+    }
+
+    private void EditToolbar_PointerWheelChanged(object sender, PointerRoutedEventArgs e)
+    {
+        var delta = e.GetCurrentPoint(this).Properties.MouseWheelDelta;
+        if (delta != 0 && HomeScrollViewer.ScrollableHeight > 0)
+        {
+            var targetOffset = Math.Clamp(
+                HomeScrollViewer.VerticalOffset - delta,
+                0.0,
+                HomeScrollViewer.ScrollableHeight);
+            HomeScrollViewer.ChangeView(null, targetOffset, null, disableAnimation: false);
+            e.Handled = true;
+        }
+    }
+
+    private void EnsureStickyCompositionInitialized()
+    {
+        if (_stickyTranslationAnimation is not null)
+        {
+            return;
+        }
+
+        ElementCompositionPreview.SetIsTranslationEnabled(EditToolbar, true);
+        _scrollManipulationProps = ElementCompositionPreview.GetScrollViewerManipulationPropertySet(HomeScrollViewer);
+        _editToolbarVisual = ElementCompositionPreview.GetElementVisual(EditToolbar);
+        var scrollViewerVisual = ElementCompositionPreview.GetElementVisual(HomeScrollViewer);
+        var compositor = _editToolbarVisual.Compositor;
+
+        _stickyTranslationAnimation = compositor.CreateExpressionAnimation(
+            "Vector3(0.0f, Max(0.0f, threshold + scroll.Translation.Y) - xamlOffset, 0.0f)");
+        _stickyTranslationAnimation.SetReferenceParameter("scroll", _scrollManipulationProps);
+        _stickyTranslationAnimation.SetScalarParameter("threshold", 0.0f);
+        _stickyTranslationAnimation.SetScalarParameter("xamlOffset", 0.0f);
+
+        _scrollViewerClip = compositor.CreateInsetClip();
+        scrollViewerVisual.Clip = _scrollViewerClip;
+
+        _scrollClipAnimation = compositor.CreateExpressionAnimation(
+            "Clamp(-scroll.Translation.Y - (threshold + 4.0f), 0.0f, maxClip)");
+        _scrollClipAnimation.SetReferenceParameter("scroll", _scrollManipulationProps);
+        _scrollClipAnimation.SetScalarParameter("threshold", 0.0f);
+        _scrollClipAnimation.SetScalarParameter("maxClip", StickyTopClipInset);
+    }
+
+    private void SyncStickyXamlOffset(bool force = false)
+    {
+        if (_stickyTranslationAnimation is null || _editToolbarVisual is null)
+        {
+            return;
+        }
+
+        var offset = HomeScrollViewer.VerticalOffset;
+        var targetXamlOffset = offset < _stickyThreshold ? _stickyThreshold - offset : 0.0;
+        if (!force && Math.Abs(_lastSyncedXamlOffset - targetXamlOffset) <= 0.05)
+        {
+            return;
+        }
+
+        _lastSyncedXamlOffset = targetXamlOffset;
+        StickyEditTransform.Y = targetXamlOffset;
+        _stickyTranslationAnimation.SetScalarParameter("xamlOffset", (float)targetXamlOffset);
+        _editToolbarVisual.StartAnimation("Translation", _stickyTranslationAnimation);
+    }
+
     private void UpdateStickyEditToolbar()
     {
-        if (!_isEditMode || EditToolbar.Visibility != Visibility.Visible || HomeScrollViewer.Content is not UIElement scrollContent)
+        if (!_isEditMode || EditToolbar.Visibility != Visibility.Visible)
         {
+            StickyToolbarOverlay.Visibility = Visibility.Collapsed;
+            EditToolbarAnchor.Visibility = Visibility.Collapsed;
+            EditToolbarAnchor.Height = 0;
             StickyEditTransform.Y = 0;
+            _lastSyncedXamlOffset = 0;
+
+            if (_isStickyCompositionActive)
+            {
+                _editToolbarVisual?.StopAnimation("Translation");
+                _editToolbarVisual?.Properties.InsertVector3("Translation", Vector3.Zero);
+                _scrollViewerClip?.StopAnimation("TopInset");
+                if (_scrollViewerClip is not null)
+                {
+                    _scrollViewerClip.TopInset = 0.0f;
+                }
+
+                _isStickyCompositionActive = false;
+            }
+
             return;
         }
 
         try
         {
-            var anchorTop = EditToolbarAnchor
-                .TransformToVisual(scrollContent)
+            if (EditToolbar.ActualHeight > 0 && Math.Abs(EditToolbarAnchor.Height - EditToolbar.ActualHeight) > 0.5)
+            {
+                EditToolbarAnchor.Height = EditToolbar.ActualHeight;
+            }
+
+            if (ScrollContentRoot.ActualWidth > 0 && Math.Abs(StickyToolbarOverlay.Width - ScrollContentRoot.ActualWidth) > 0.5)
+            {
+                StickyToolbarOverlay.Width = ScrollContentRoot.ActualWidth;
+                StickyToolbarOverlay.HorizontalAlignment = HorizontalAlignment.Left;
+            }
+
+            var headerTop = FavoritesHeaderGrid
+                .TransformToVisual(ScrollContentRoot)
                 .TransformPoint(new Point(0, 0))
                 .Y;
-            var stickyThreshold = Math.Max(0.0, anchorTop - 12.0);
-            var offset = HomeScrollViewer.VerticalOffset;
-            StickyEditTransform.Y = offset > stickyThreshold ? offset - stickyThreshold : 0.0;
+            var anchorTop = headerTop + FavoritesHeaderGrid.ActualHeight + 10.0;
+            _stickyThreshold = Math.Max(0.0, anchorTop - StickyTopMargin);
+
+            EnsureStickyCompositionInitialized();
+            _stickyTranslationAnimation!.SetScalarParameter("threshold", (float)_stickyThreshold);
+            _scrollClipAnimation!.SetScalarParameter("threshold", (float)_stickyThreshold);
+
+            SyncStickyXamlOffset(force: true);
+            _scrollViewerClip!.StartAnimation("TopInset", _scrollClipAnimation);
+            _isStickyCompositionActive = true;
         }
         catch
         {
