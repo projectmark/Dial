@@ -738,6 +738,40 @@ public sealed class DialRadioTests : IDisposable
         Assert.All(recordedUris, uri => Assert.Contains("bitrateMin=128", uri.Query, StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void MusicLookupHelper_BuildsValidEncodedUrlsForAllSupportedServices()
+    {
+        Assert.Equal(4, MusicLookupHelper.Services.Count);
+        Assert.Null(MusicLookupHelper.BuildSearchUrl(MusicLookupHelper.SpotifyId, null));
+        Assert.Null(MusicLookupHelper.BuildSearchUrl(MusicLookupHelper.SpotifyId, "   "));
+
+        const string rawTrack = "  De Staat  -  Witch Doctor & Friends  ";
+        var encoded = Uri.EscapeDataString("De Staat - Witch Doctor & Friends");
+
+        Assert.Equal(
+            $"https://open.spotify.com/search/{encoded}",
+            MusicLookupHelper.BuildSearchUrl(MusicLookupHelper.SpotifyId, rawTrack));
+        Assert.Equal(
+            $"https://music.youtube.com/search?q={encoded}",
+            MusicLookupHelper.BuildSearchUrl(MusicLookupHelper.YouTubeMusicId, rawTrack));
+        Assert.Equal(
+            $"https://www.deezer.com/search/{encoded}",
+            MusicLookupHelper.BuildSearchUrl(MusicLookupHelper.DeezerId, rawTrack));
+        Assert.Equal(
+            $"https://listen.tidal.com/search?q={encoded}",
+            MusicLookupHelper.BuildSearchUrl(MusicLookupHelper.TidalId, rawTrack));
+
+        // Unknown service falls back cleanly to Spotify
+        Assert.Equal(MusicLookupHelper.SpotifyId, MusicLookupHelper.NormalizeServiceId("unknown_service"));
+        Assert.Equal("Spotify", MusicLookupHelper.GetDisplayName("unknown_service"));
+        Assert.Equal("YouTube Music", MusicLookupHelper.GetDisplayName(MusicLookupHelper.YouTubeMusicId));
+        Assert.Equal("Deezer", MusicLookupHelper.GetDisplayName(MusicLookupHelper.DeezerId));
+        Assert.Equal("Tidal", MusicLookupHelper.GetDisplayName(MusicLookupHelper.TidalId));
+        Assert.Equal(
+            $"https://open.spotify.com/search/{encoded}",
+            MusicLookupHelper.BuildSearchUrl("unknown_service", rawTrack));
+    }
+
     private sealed class StubJsonHandler(Func<HttpRequestMessage, string> responder) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

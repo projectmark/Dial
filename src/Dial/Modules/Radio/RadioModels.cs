@@ -24,6 +24,77 @@ public static class RadioOptions
     public const string HotkeyPreviousStation = "radio.hotkey.prev";
     public const string HotkeyMute = "radio.hotkey.mute";
     public const string DiscoverMinBitrate = "radio.discover_min_bitrate";
+    public const string TrackLookupEnabled = "radio.track_lookup_enabled";
+    public const string TrackLookupService = "radio.track_lookup_service";
+}
+
+/// <summary>
+/// Builds search URLs to open the currently playing track in a user-selected streaming service.
+/// </summary>
+public static class MusicLookupHelper
+{
+    public const string SpotifyId = "spotify";
+    public const string YouTubeMusicId = "youtube_music";
+    public const string DeezerId = "deezer";
+    public const string TidalId = "tidal";
+
+    public static IReadOnlyList<(string Id, string DisplayName)> Services { get; } = ((string Id, string DisplayName)[])
+    [
+        (SpotifyId, "Spotify"),
+        (YouTubeMusicId, "YouTube Music"),
+        (DeezerId, "Deezer"),
+        (TidalId, "Tidal")
+    ];
+
+    public static string NormalizeServiceId(string? serviceId)
+    {
+        if (string.IsNullOrWhiteSpace(serviceId))
+        {
+            return SpotifyId;
+        }
+
+        return serviceId.Trim().ToLowerInvariant() switch
+        {
+            YouTubeMusicId => YouTubeMusicId,
+            DeezerId => DeezerId,
+            TidalId => TidalId,
+            _ => SpotifyId
+        };
+    }
+
+    public static string GetDisplayName(string? serviceId)
+        => NormalizeServiceId(serviceId) switch
+        {
+            YouTubeMusicId => "YouTube Music",
+            DeezerId => "Deezer",
+            TidalId => "Tidal",
+            _ => "Spotify"
+        };
+
+    public static string? BuildSearchUrl(string? serviceId, string? trackTitle)
+    {
+        if (string.IsNullOrWhiteSpace(trackTitle))
+        {
+            return null;
+        }
+
+        var normalizedQuery = string.Join(
+            ' ',
+            trackTitle.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (normalizedQuery.Length == 0)
+        {
+            return null;
+        }
+
+        var encoded = Uri.EscapeDataString(normalizedQuery);
+        return NormalizeServiceId(serviceId) switch
+        {
+            YouTubeMusicId => $"https://music.youtube.com/search?q={encoded}",
+            DeezerId => $"https://www.deezer.com/search/{encoded}",
+            TidalId => $"https://listen.tidal.com/search?q={encoded}",
+            _ => $"https://open.spotify.com/search/{encoded}"
+        };
+    }
 }
 
 /// <summary>

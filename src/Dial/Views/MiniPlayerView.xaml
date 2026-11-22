@@ -83,11 +83,29 @@
                 </Grid>
 
                 <!-- Row 1: Track / Tagline -->
-                <TextBlock
-                    x:Name="NowPlayingText"
-                    Grid.Row="1"
-                    FontSize="13"
-                    TextTrimming="CharacterEllipsis" />
+                <Grid Grid.Row="1" ColumnSpacing="6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        x:Name="NowPlayingText"
+                        Grid.Column="0"
+                        FontSize="13"
+                        TextTrimming="CharacterEllipsis"
+                        VerticalAlignment="Center" />
+                    <Button
+                        x:Name="OpenTrackLookupBtn"
+                        Grid.Column="1"
+                        Width="24"
+                        Height="24"
+                        Padding="0"
+                        CornerRadius="6"
+                        Visibility="Collapsed"
+                        Click="OpenTrackLookupBtn_Click">
+                        <FontIcon FontFamily="Segoe Fluent Icons" FontSize="11" Glyph="&#xE8A7;" />
+                    </Button>
+                </Grid>
 
                 <!-- Row 2: Full-Width Transport & Volume Controls -->
                 <Grid Grid.Row="2" ColumnSpacing="8">

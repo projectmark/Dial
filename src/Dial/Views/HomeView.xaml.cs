@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Chassis.Core.Data;
 using Chassis.Core.Localization;
 using Chassis.Core.Settings;
@@ -96,6 +97,7 @@ public sealed partial class HomeView : UserControl
         _theme.BindInteractiveButton(BulkDeleteBtn, () => false);
         _theme.BindInteractiveButton(SleepCustomStartBtn, () => false);
         _theme.BindInteractiveButton(SleepFlyoutCancelBtn, () => false);
+        _theme.BindInteractiveButton(OpenTrackLookupBtn, () => false);
 
         BuildSleepPresets();
         RebuildStationsUi();
@@ -203,6 +205,10 @@ public sealed partial class HomeView : UserControl
             {
                 RebuildStationsUi();
                 RenderState(_player.Current);
+            }
+            else
+            {
+                UpdateTrackLookupButton(_player.Current);
             }
         });
 
@@ -861,6 +867,7 @@ public sealed partial class HomeView : UserControl
         }
 
         UpdateHeroMetadata(snapshot, _stats.CurrentSessionElapsed);
+        UpdateTrackLookupButton(snapshot);
         UpdateSleepTimerUi(_sleepTimer.IsActive ? _sleepTimer.Remaining : null);
 
         PlayPauseGlyph.Glyph = isLiveOrBuffering ? "\uE769" : "\uE768";
@@ -1230,6 +1237,47 @@ public sealed partial class HomeView : UserControl
 
     private async void NextStationBtn_Click(object sender, RoutedEventArgs e)
         => await _player.NextStationAsync();
+
+    private void UpdateTrackLookupButton(RadioStateSnapshot snapshot)
+    {
+        var enabled = _settings.GetOption(RadioOptions.TrackLookupEnabled, true);
+        var hasTrack = snapshot.State != RadioPlaybackState.Error && !string.IsNullOrWhiteSpace(snapshot.NowPlaying);
+
+        if (!enabled || !hasTrack)
+        {
+            OpenTrackLookupBtn.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var serviceId = _settings.GetOption(RadioOptions.TrackLookupService, MusicLookupHelper.SpotifyId);
+        var serviceName = MusicLookupHelper.GetDisplayName(serviceId);
+        var tooltip = _localization.GetString("Radio.TrackLookup.Tooltip", snapshot.NowPlaying!, serviceName);
+
+        OpenTrackLookupLabel.Text = serviceName;
+        AutomationProperties.SetName(OpenTrackLookupBtn, tooltip);
+        ToolTipService.SetToolTip(OpenTrackLookupBtn, tooltip);
+        OpenTrackLookupBtn.Visibility = Visibility.Visible;
+        _theme.RefreshInteractiveButton(OpenTrackLookupBtn);
+    }
+
+    private void OpenTrackLookupBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var serviceId = _settings.GetOption(RadioOptions.TrackLookupService, MusicLookupHelper.SpotifyId);
+        var url = MusicLookupHelper.BuildSearchUrl(serviceId, _player.Current.NowPlaying);
+        if (string.IsNullOrEmpty(url))
+        {
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch
+        {
+            // Ignore shell launch errors on systems without an associated browser handler.
+        }
+    }
 
     private void MuteBtn_Click(object sender, RoutedEventArgs e)
         => _player.ToggleMute();

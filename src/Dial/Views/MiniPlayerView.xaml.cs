@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Chassis.Core.Localization;
 using Chassis.Core.Settings;
 using Chassis.UI.Theme;
@@ -51,6 +52,7 @@ public sealed partial class MiniPlayerView : UserControl
         _theme.BindInteractiveButton(MuteBtn, () => _player.Current.IsMuted);
         _theme.BindInteractiveButton(PinBtn, () => _settings.GetOption(RadioModule.MiniAlwaysOnTopOptionKey, true));
         _theme.BindInteractiveButton(ExpandBtn, () => false);
+        _theme.BindInteractiveButton(OpenTrackLookupBtn, () => false);
 
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
@@ -66,6 +68,7 @@ public sealed partial class MiniPlayerView : UserControl
             _player.StateChanged += OnPlayerStateChanged;
             _player.VolumeChanged += OnPlayerVolumeChanged;
             _sleepTimer.RemainingChanged += OnSleepRemainingChanged;
+            _settings.SettingsChanged += OnSettingsChanged;
             _theme.ThemeChanged += OnThemeChanged;
             _localization.LanguageChanged += OnLanguageChanged;
             _isSubscribed = true;
@@ -84,6 +87,7 @@ public sealed partial class MiniPlayerView : UserControl
             _player.StateChanged -= OnPlayerStateChanged;
             _player.VolumeChanged -= OnPlayerVolumeChanged;
             _sleepTimer.RemainingChanged -= OnSleepRemainingChanged;
+            _settings.SettingsChanged -= OnSettingsChanged;
             _theme.ThemeChanged -= OnThemeChanged;
             _localization.LanguageChanged -= OnLanguageChanged;
             _isSubscribed = false;
@@ -133,6 +137,15 @@ public sealed partial class MiniPlayerView : UserControl
             if (_isSubscribed && !_isUpdatingSliderFromInput)
             {
                 ApplyVolumeUi(volume, isMuted, updateSlider: true);
+            }
+        });
+
+    private void OnSettingsChanged(AppSettings _)
+        => DispatcherQueue?.TryEnqueue(() =>
+        {
+            if (_isSubscribed)
+            {
+                UpdateTrackLookupButton(_player.Current);
             }
         });
 
@@ -232,6 +245,7 @@ public sealed partial class MiniPlayerView : UserControl
         ApplyVolumeUi(snapshot.Volume, snapshot.IsMuted, updateSlider: !_isUpdatingSliderFromInput);
 
         UpdateSleepReadout(_sleepTimer.IsActive ? _sleepTimer.Remaining : null);
+        UpdateTrackLookupButton(snapshot);
 
         _theme.RefreshInteractiveButton(PrevBtn);
         _theme.RefreshInteractiveButton(PlayPauseBtn);
@@ -267,6 +281,46 @@ public sealed partial class MiniPlayerView : UserControl
 
     private async void NextBtn_Click(object sender, RoutedEventArgs e)
         => await _player.NextStationAsync();
+
+    private void UpdateTrackLookupButton(RadioStateSnapshot snapshot)
+    {
+        var enabled = _settings.GetOption(RadioOptions.TrackLookupEnabled, true);
+        var hasTrack = snapshot.State != RadioPlaybackState.Error && !string.IsNullOrWhiteSpace(snapshot.NowPlaying);
+
+        if (!enabled || !hasTrack)
+        {
+            OpenTrackLookupBtn.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var serviceId = _settings.GetOption(RadioOptions.TrackLookupService, MusicLookupHelper.SpotifyId);
+        var serviceName = MusicLookupHelper.GetDisplayName(serviceId);
+        var tooltip = _localization.GetString("Radio.TrackLookup.Tooltip", snapshot.NowPlaying!, serviceName);
+
+        AutomationProperties.SetName(OpenTrackLookupBtn, tooltip);
+        ToolTipService.SetToolTip(OpenTrackLookupBtn, tooltip);
+        OpenTrackLookupBtn.Visibility = Visibility.Visible;
+        _theme.RefreshInteractiveButton(OpenTrackLookupBtn);
+    }
+
+    private void OpenTrackLookupBtn_Click(object sender, RoutedEventArgs e)
+    {
+        var serviceId = _settings.GetOption(RadioOptions.TrackLookupService, MusicLookupHelper.SpotifyId);
+        var url = MusicLookupHelper.BuildSearchUrl(serviceId, _player.Current.NowPlaying);
+        if (string.IsNullOrEmpty(url))
+        {
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch
+        {
+            // Ignore shell launch errors on systems without an associated browser handler.
+        }
+    }
 
     private void MuteBtn_Click(object sender, RoutedEventArgs e)
         => _player.ToggleMute();

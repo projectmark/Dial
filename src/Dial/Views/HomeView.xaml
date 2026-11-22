@@ -85,10 +85,32 @@
                                     </Border>
                                 </StackPanel>
 
-                                <TextBlock
-                                    x:Name="HeroNowPlayingText"
-                                    FontSize="14"
-                                    TextWrapping="Wrap" />
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock
+                                        x:Name="HeroNowPlayingText"
+                                        Grid.Column="0"
+                                        FontSize="14"
+                                        TextWrapping="Wrap"
+                                        VerticalAlignment="Center" />
+                                    <Button
+                                        x:Name="OpenTrackLookupBtn"
+                                        Grid.Column="1"
+                                        Height="26"
+                                        Padding="10,2"
+                                        CornerRadius="6"
+                                        VerticalAlignment="Center"
+                                        Visibility="Collapsed"
+                                        Click="OpenTrackLookupBtn_Click">
+                                        <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                            <FontIcon FontFamily="Segoe Fluent Icons" FontSize="11" Glyph="&#xE8A7;" />
+                                            <TextBlock x:Name="OpenTrackLookupLabel" FontSize="12" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
 
                                 <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                                     <TextBlock

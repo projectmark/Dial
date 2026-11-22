@@ -299,6 +299,20 @@ public sealed class RadioModule : IChassisModule
             sizeCombo.Items.Add(sizeLargeItem);
             var sizeCard = new SettingsCard { Glyph = "\uE8E9", ActionContent = sizeCombo };
 
+            var trackLookupToggle = CreateAlignedToggle();
+            var trackLookupCard = new SettingsCard { Glyph = "\uE8D6", ActionContent = trackLookupToggle };
+
+            var trackLookupServiceCombo = new ComboBox { Width = 220 };
+            foreach (var (serviceId, displayName) in MusicLookupHelper.Services)
+            {
+                trackLookupServiceCombo.Items.Add(new ComboBoxItem
+                {
+                    Tag = serviceId,
+                    Content = displayName
+                });
+            }
+            var trackLookupServiceCard = new SettingsCard { Glyph = "\uE8A7", ActionContent = trackLookupServiceCombo };
+
             var hotkeysToggle = CreateAlignedToggle();
             var hotkeysCard = new SettingsCard { Glyph = "\uE765", ActionContent = hotkeysToggle };
 
@@ -628,6 +642,23 @@ public sealed class RadioModule : IChassisModule
                     "large" => 2,
                     _ => 1
                 };
+
+                var lookupEnabled = settings.GetOption(RadioOptions.TrackLookupEnabled, true);
+                trackLookupToggle.IsOn = lookupEnabled;
+                var selectedService = MusicLookupHelper.NormalizeServiceId(
+                    settings.GetOption(RadioOptions.TrackLookupService, MusicLookupHelper.SpotifyId));
+                for (var i = 0; i < trackLookupServiceCombo.Items.Count; i++)
+                {
+                    if (trackLookupServiceCombo.Items[i] is ComboBoxItem item &&
+                        string.Equals(item.Tag as string, selectedService, StringComparison.OrdinalIgnoreCase))
+                    {
+                        trackLookupServiceCombo.SelectedIndex = i;
+                        break;
+                    }
+                }
+                trackLookupServiceCard.IsDimmed = !lookupEnabled;
+                trackLookupServiceCombo.IsEnabled = lookupEnabled;
+
                 isSyncing = false;
 
                 SyncHotkeyRowStates();
@@ -678,6 +709,23 @@ public sealed class RadioModule : IChassisModule
                     settings.SetOption(FontSizeOptionKey, tag);
                 }
             };
+            trackLookupToggle.Toggled += (_, _) =>
+            {
+                if (!isSyncing)
+                {
+                    var enabled = trackLookupToggle.IsOn;
+                    trackLookupServiceCard.IsDimmed = !enabled;
+                    trackLookupServiceCombo.IsEnabled = enabled;
+                    settings.SetOption(RadioOptions.TrackLookupEnabled, enabled);
+                }
+            };
+            trackLookupServiceCombo.SelectionChanged += (_, _) =>
+            {
+                if (!isSyncing && trackLookupServiceCombo.SelectedItem is ComboBoxItem item && item.Tag is string tag)
+                {
+                    settings.SetOption(RadioOptions.TrackLookupService, MusicLookupHelper.NormalizeServiceId(tag));
+                }
+            };
 
             void RefreshText()
             {
@@ -720,6 +768,14 @@ public sealed class RadioModule : IChassisModule
                 sizeNormalItem.Content = localization["Radio.Settings.FontSize.Normal"];
                 sizeLargeItem.Content = localization["Radio.Settings.FontSize.Large"];
                 AutomationProperties.SetName(sizeCombo, localization["Radio.Settings.FontSize.Title"]);
+
+                trackLookupCard.Title = localization["Radio.Settings.TrackLookup.Title"];
+                trackLookupCard.Description = localization["Radio.Settings.TrackLookup.Desc"];
+                AutomationProperties.SetName(trackLookupToggle, localization["Radio.Settings.TrackLookup.Title"]);
+
+                trackLookupServiceCard.Title = localization["Radio.Settings.TrackLookupService.Title"];
+                trackLookupServiceCard.Description = localization["Radio.Settings.TrackLookupService.Desc"];
+                AutomationProperties.SetName(trackLookupServiceCombo, localization["Radio.Settings.TrackLookupService.Title"]);
 
                 hotkeysCard.Title = localization["Radio.Settings.Hotkeys.Title"];
                 hotkeysCard.Description = localization["Radio.Settings.Hotkeys.Desc"];
@@ -764,6 +820,8 @@ public sealed class RadioModule : IChassisModule
             panel.Children.Add(numbersCard);
             panel.Children.Add(alignCard);
             panel.Children.Add(sizeCard);
+            panel.Children.Add(trackLookupCard);
+            panel.Children.Add(trackLookupServiceCard);
             panel.Children.Add(hotkeysCard);
             panel.Children.Add(hotkeysHeaderRow);
             foreach (var row in hotkeyRows)
