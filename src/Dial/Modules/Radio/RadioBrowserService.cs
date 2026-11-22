@@ -15,6 +15,7 @@ public interface IRadioBrowserService : IDisposable
         string? query,
         string? countryCode,
         int limit = 60,
+        int minBitrateKbps = 0,
         CancellationToken ct = default);
 }
 
@@ -38,6 +39,16 @@ public sealed class RadioBrowserService : IRadioBrowserService
     public RadioBrowserService()
     {
         _httpClient = new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(10)
+        };
+        _httpClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", AppVersion.UserAgent);
+    }
+
+    public RadioBrowserService(HttpMessageHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        _httpClient = new HttpClient(handler, disposeHandler: false)
         {
             Timeout = TimeSpan.FromSeconds(10)
         };
@@ -71,40 +82,38 @@ public sealed class RadioBrowserService : IRadioBrowserService
         string? query,
         string? countryCode,
         int limit = 60,
+        int minBitrateKbps = 0,
         CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var clampedLimit = Math.Clamp(limit, 1, 150);
+        var effectiveMinBitrate = Math.Max(0, minBitrateKbps);
 
-        var sb = new StringBuilder($"/json/stations/search?hidebroken=true&order=clickcount&reverse=true&limit={clampedLimit}");
-        if (!string.IsNullOrWhiteSpace(query))
-        {
-            sb.Append("&name=").Append(Uri.EscapeDataString(query.Trim()));
-        }
+        var primaryPath = BuildSearchRelativePath(
+            nameQuery: query,
+            tagQuery: null,
+            countryCode: countryCode,
+            limit: clampedLimit,
+            minBitrateKbps: effectiveMinBitrate);
 
-        if (!string.IsNullOrWhiteSpace(countryCode))
-        {
-            sb.Append("&countrycode=").Append(Uri.EscapeDataString(countryCode.Trim().ToUpperInvariant()));
-        }
-
-        var json = await FetchFromMirrorsAsync(sb.ToString(), ct).ConfigureAwait(false);
-        var results = ParseStationsJson(json).ToList();
+        var json = await FetchFromMirrorsAsync(primaryPath, ct).ConfigureAwait(false);
+        var results = FilterByMinBitrate(ParseStationsJson(json), effectiveMinBitrate).ToList();
 
         // Fallback tag search for single-keyword genre queries if name search returned very few results.
         if (!string.IsNullOrWhiteSpace(query) && !query.Trim().Contains(' ') && results.Count < 8)
         {
-            var tagSb = new StringBuilder($"/json/stations/search?hidebroken=true&order=clickcount&reverse=true&limit={clampedLimit}");
-            tagSb.Append("&tag=").Append(Uri.EscapeDataString(query.Trim().ToLowerInvariant()));
-            if (!string.IsNullOrWhiteSpace(countryCode))
-            {
-                tagSb.Append("&countrycode=").Append(Uri.EscapeDataString(countryCode.Trim().ToUpperInvariant()));
-            }
+            var tagPath = BuildSearchRelativePath(
+                nameQuery: null,
+                tagQuery: query.Trim().ToLowerInvariant(),
+                countryCode: countryCode,
+                limit: clampedLimit,
+                minBitrateKbps: effectiveMinBitrate);
 
             try
             {
-                var tagJson = await FetchFromMirrorsAsync(tagSb.ToString(), ct).ConfigureAwait(false);
+                var tagJson = await FetchFromMirrorsAsync(tagPath, ct).ConfigureAwait(false);
                 var existingUrls = new HashSet<string>(results.Select(r => r.StreamUrl), StringComparer.OrdinalIgnoreCase);
-                foreach (var item in ParseStationsJson(tagJson))
+                foreach (var item in FilterByMinBitrate(ParseStationsJson(tagJson), effectiveMinBitrate))
                 {
                     if (existingUrls.Add(item.StreamUrl))
                     {
@@ -127,6 +136,51 @@ public sealed class RadioBrowserService : IRadioBrowserService
         }
 
         return results;
+    }
+
+    public static string BuildSearchRelativePath(
+        string? nameQuery,
+        string? tagQuery,
+        string? countryCode,
+        int limit = 60,
+        int minBitrateKbps = 0)
+    {
+        var clampedLimit = Math.Clamp(limit, 1, 150);
+        var sb = new StringBuilder($"/json/stations/search?hidebroken=true&order=clickcount&reverse=true&limit={clampedLimit}");
+
+        if (!string.IsNullOrWhiteSpace(nameQuery))
+        {
+            sb.Append("&name=").Append(Uri.EscapeDataString(nameQuery.Trim()));
+        }
+
+        if (!string.IsNullOrWhiteSpace(tagQuery))
+        {
+            sb.Append("&tag=").Append(Uri.EscapeDataString(tagQuery.Trim()));
+        }
+
+        if (!string.IsNullOrWhiteSpace(countryCode))
+        {
+            sb.Append("&countrycode=").Append(Uri.EscapeDataString(countryCode.Trim().ToUpperInvariant()));
+        }
+
+        if (minBitrateKbps > 0)
+        {
+            sb.Append("&bitrateMin=").Append(minBitrateKbps);
+        }
+
+        return sb.ToString();
+    }
+
+    public static IReadOnlyList<RadioStation> FilterByMinBitrate(IEnumerable<RadioStation> stations, int minBitrateKbps)
+    {
+        ArgumentNullException.ThrowIfNull(stations);
+
+        if (minBitrateKbps <= 0)
+        {
+            return stations as IReadOnlyList<RadioStation> ?? stations.ToList();
+        }
+
+        return stations.Where(s => s.BitrateKbps >= minBitrateKbps).ToList();
     }
 
     public static IReadOnlyList<RadioStation> ParseStationsJson(string json)

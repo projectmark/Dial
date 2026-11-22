@@ -1,4 +1,5 @@
 using Chassis.Core.Localization;
+using Chassis.Core.Settings;
 using Chassis.UI.Theme;
 using Dial.Modules.Radio;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,8 +26,11 @@ public sealed partial class DiscoverView : UserControl
         FontIcon FavoriteIcon,
         TextBlock FavoriteLabel);
 
+    private static readonly int[] BitratePresets = [0, 64, 96, 128, 192, 256, 320];
+
     private readonly IRadioBrowserService _browser;
     private readonly IRadioPlayerService _player;
+    private readonly ISettingsService _settings;
     private readonly ILocalizationService _localization;
     private readonly ThemeManager _theme;
     private readonly List<ResultRowVisual> _resultVisuals = [];
@@ -35,9 +39,11 @@ public sealed partial class DiscoverView : UserControl
     private IReadOnlyList<RadioStation> _results = Array.Empty<RadioStation>();
     private IReadOnlyList<RadioBrowserCountry> _countries = Array.Empty<RadioBrowserCountry>();
     private string? _selectedCountryCode;
+    private int _selectedMinBitrate;
     private char? _selectedAlphaFilter;
     private bool _hasLoadedInitial;
     private bool _isSubscribed;
+    private bool _isUpdatingBitrateCombo;
     private CancellationTokenSource? _searchCts;
 
     public DiscoverView()
@@ -46,12 +52,14 @@ public sealed partial class DiscoverView : UserControl
 
         _browser = App.Services.GetRequiredService<IRadioBrowserService>();
         _player = App.Services.GetRequiredService<IRadioPlayerService>();
+        _settings = App.Services.GetRequiredService<ISettingsService>();
         _localization = App.Services.GetRequiredService<ILocalizationService>();
         _theme = App.Services.GetRequiredService<ThemeManager>();
 
         _selectedCountryCode = _localization.CurrentCulture.StartsWith("nl", StringComparison.OrdinalIgnoreCase)
             ? "NL"
             : null;
+        _selectedMinBitrate = NormalizeBitrateFilter(_settings.GetOption(RadioOptions.DiscoverMinBitrate, 0));
 
         _theme.BindInteractiveButton(SearchBtn, () => false);
         _theme.BindInteractiveButton(CountryFilterBtn, () => !string.IsNullOrWhiteSpace(_selectedCountryCode));
@@ -64,6 +72,7 @@ public sealed partial class DiscoverView : UserControl
         Unloaded += OnUnloaded;
 
         ApplyLocalization();
+        SyncMinBitrateSelection();
         ApplyThemeVisuals();
     }
 
@@ -191,7 +200,51 @@ public sealed partial class DiscoverView : UserControl
         AutomationProperties.SetName(CountryResetBtn, _localization["Discover.CountryReset"]);
         AutomationProperties.SetName(CountryQuickNlBtn, _localization["Discover.QuickCountryNl"]);
 
+        _isUpdatingBitrateCombo = true;
+        try
+        {
+            BitrateAllItem.Content = _localization["Discover.QualityAll"];
+            Bitrate64Item.Content = _localization.GetString("Discover.QualityMin", 64);
+            Bitrate96Item.Content = _localization.GetString("Discover.QualityMin", 96);
+            Bitrate128Item.Content = _localization.GetString("Discover.QualityMin", 128);
+            Bitrate192Item.Content = _localization.GetString("Discover.QualityMin", 192);
+            Bitrate256Item.Content = _localization.GetString("Discover.QualityMin", 256);
+            Bitrate320Item.Content = _localization.GetString("Discover.QualityMin", 320);
+        }
+        finally
+        {
+            _isUpdatingBitrateCombo = false;
+        }
+
+        var qualityTooltip = _localization["Discover.QualityTooltip"];
+        AutomationProperties.SetName(MinBitrateCombo, qualityTooltip);
+        ToolTipService.SetToolTip(MinBitrateCombo, qualityTooltip);
+
         RefreshResultStates();
+    }
+
+    private static int NormalizeBitrateFilter(int bitrate)
+        => Array.IndexOf(BitratePresets, bitrate) >= 0 ? bitrate : 0;
+
+    private void SyncMinBitrateSelection()
+    {
+        _isUpdatingBitrateCombo = true;
+        try
+        {
+            var targetTag = _selectedMinBitrate.ToString();
+            foreach (var item in MinBitrateCombo.Items.OfType<ComboBoxItem>())
+            {
+                if (string.Equals(item.Tag?.ToString(), targetTag, StringComparison.Ordinal))
+                {
+                    MinBitrateCombo.SelectedItem = item;
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            _isUpdatingBitrateCombo = false;
+        }
     }
 
     private async Task ExecuteSearchAsync()
@@ -208,7 +261,7 @@ public sealed partial class DiscoverView : UserControl
 
         try
         {
-            var stations = await _browser.SearchStationsAsync(SearchBox.Text, _selectedCountryCode, 60, cts.Token);
+            var stations = await _browser.SearchStationsAsync(SearchBox.Text, _selectedCountryCode, 60, _selectedMinBitrate, cts.Token);
             if (cts.IsCancellationRequested)
             {
                 return;
@@ -527,6 +580,43 @@ public sealed partial class DiscoverView : UserControl
     private void CountryQuickNlBtn_Click(object sender, RoutedEventArgs e) => SelectCountry("NL");
     private void CountryResetBtn_Click(object sender, RoutedEventArgs e) => SelectCountry(null);
     private void SearchBtn_Click(object sender, RoutedEventArgs e) => _ = ExecuteSearchAsync();
+
+    private void MinBitrateCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isUpdatingBitrateCombo)
+        {
+            return;
+        }
+
+        if (MinBitrateCombo.SelectedItem is ComboBoxItem item &&
+            int.TryParse(item.Tag?.ToString(), out var kbps))
+        {
+            var normalized = NormalizeBitrateFilter(kbps);
+            if (normalized != _selectedMinBitrate)
+            {
+                _selectedMinBitrate = normalized;
+                _settings.SetOption(RadioOptions.DiscoverMinBitrate, _selectedMinBitrate);
+                _ = ExecuteSearchAsync();
+            }
+        }
+    }
+
+    private void SearchBarGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        var narrow = e.NewSize.Width > 0 && e.NewSize.Width < 680;
+        if (narrow)
+        {
+            Grid.SetRow(FilterControlsPanel, 1);
+            Grid.SetColumn(FilterControlsPanel, 0);
+            Grid.SetColumnSpan(FilterControlsPanel, 3);
+        }
+        else
+        {
+            Grid.SetRow(FilterControlsPanel, 0);
+            Grid.SetColumn(FilterControlsPanel, 2);
+            Grid.SetColumnSpan(FilterControlsPanel, 1);
+        }
+    }
 
     private void SearchBox_KeyDown(object sender, KeyRoutedEventArgs e)
     {

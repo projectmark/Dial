@@ -423,6 +423,9 @@ public sealed partial class MainWindow : Window
 
     private void RegisterAccelerators()
     {
+        // Prevent WinUI from auto-generating an "F1" hover tooltip on child controls that lack their own tooltip.
+        RootGrid.KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
+
         var f1 = new KeyboardAccelerator { Key = VirtualKey.F1 };
         f1.Invoked += (_, e) =>
         {

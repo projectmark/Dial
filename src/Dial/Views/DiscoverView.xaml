@@ -18,21 +18,32 @@
                 <TextBlock x:Name="HeaderSubtitle" FontSize="13" TextWrapping="Wrap" />
             </StackPanel>
 
-            <!-- Search & Country Filter Bar -->
-            <Grid Grid.Row="1" ColumnSpacing="10">
+            <!-- Search, Quality & Country Filter Bar -->
+            <Grid
+                x:Name="SearchBarGrid"
+                Grid.Row="1"
+                ColumnSpacing="10"
+                RowSpacing="10"
+                SizeChanged="SearchBarGrid_SizeChanged">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
 
                 <TextBox
                     x:Name="SearchBox"
+                    Grid.Row="0"
                     Grid.Column="0"
                     KeyDown="SearchBox_KeyDown" />
 
                 <Button
                     x:Name="SearchBtn"
+                    Grid.Row="0"
                     Grid.Column="1"
                     Height="36"
                     Padding="14,6"
@@ -44,58 +55,79 @@
                     </StackPanel>
                 </Button>
 
-                <Button
-                    x:Name="CountryFilterBtn"
+                <StackPanel
+                    x:Name="FilterControlsPanel"
+                    Grid.Row="0"
                     Grid.Column="2"
-                    Height="36"
-                    Padding="14,6"
-                    CornerRadius="6">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE774;" />
-                        <TextBlock x:Name="CountryFilterLabel" FontSize="13" FontWeight="SemiBold" />
-                    </StackPanel>
-                    <Button.Flyout>
-                        <Flyout x:Name="CountryFlyout" Opening="CountryFlyout_Opening">
-                            <StackPanel Spacing="10" Width="320" Padding="4">
-                                <Grid ColumnSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <Button
-                                        x:Name="CountryQuickNlBtn"
-                                        Grid.Column="0"
-                                        HorizontalAlignment="Stretch"
-                                        Height="32"
-                                        CornerRadius="6"
-                                        Content="Nederland (NL)"
-                                        Click="CountryQuickNlBtn_Click" />
-                                    <Button
-                                        x:Name="CountryResetBtn"
-                                        Grid.Column="1"
-                                        Height="32"
-                                        Padding="12,4"
-                                        CornerRadius="6"
-                                        Click="CountryResetBtn_Click" />
-                                </Grid>
+                    Orientation="Horizontal"
+                    Spacing="10">
+                    <ComboBox
+                        x:Name="MinBitrateCombo"
+                        Height="36"
+                        MinWidth="156"
+                        CornerRadius="6"
+                        SelectionChanged="MinBitrateCombo_SelectionChanged">
+                        <ComboBoxItem x:Name="BitrateAllItem" Tag="0" />
+                        <ComboBoxItem x:Name="Bitrate64Item" Tag="64" />
+                        <ComboBoxItem x:Name="Bitrate96Item" Tag="96" />
+                        <ComboBoxItem x:Name="Bitrate128Item" Tag="128" />
+                        <ComboBoxItem x:Name="Bitrate192Item" Tag="192" />
+                        <ComboBoxItem x:Name="Bitrate256Item" Tag="256" />
+                        <ComboBoxItem x:Name="Bitrate320Item" Tag="320" />
+                    </ComboBox>
 
-                                <Grid x:Name="AlphabetGrid" ColumnSpacing="4" RowSpacing="4" />
+                    <Button
+                        x:Name="CountryFilterBtn"
+                        Height="36"
+                        Padding="14,6"
+                        CornerRadius="6">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon FontFamily="Segoe Fluent Icons" FontSize="14" Glyph="&#xE774;" />
+                            <TextBlock x:Name="CountryFilterLabel" FontSize="13" FontWeight="SemiBold" />
+                        </StackPanel>
+                        <Button.Flyout>
+                            <Flyout x:Name="CountryFlyout" Opening="CountryFlyout_Opening">
+                                <StackPanel Spacing="10" Width="320" Padding="4">
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Button
+                                            x:Name="CountryQuickNlBtn"
+                                            Grid.Column="0"
+                                            HorizontalAlignment="Stretch"
+                                            Height="32"
+                                            CornerRadius="6"
+                                            Content="Nederland (NL)"
+                                            Click="CountryQuickNlBtn_Click" />
+                                        <Button
+                                            x:Name="CountryResetBtn"
+                                            Grid.Column="1"
+                                            Height="32"
+                                            Padding="12,4"
+                                            CornerRadius="6"
+                                            Click="CountryResetBtn_Click" />
+                                    </Grid>
 
-                                <ProgressRing
-                                    x:Name="CountryLoadingRing"
-                                    Width="20"
-                                    Height="20"
-                                    IsActive="False"
-                                    Visibility="Collapsed"
-                                    HorizontalAlignment="Center" />
+                                    <Grid x:Name="AlphabetGrid" ColumnSpacing="4" RowSpacing="4" />
 
-                                <ScrollViewer MaxHeight="240" VerticalScrollBarVisibility="Auto">
-                                    <StackPanel x:Name="CountryListPanel" Spacing="4" />
-                                </ScrollViewer>
-                            </StackPanel>
-                        </Flyout>
-                    </Button.Flyout>
-                </Button>
+                                    <ProgressRing
+                                        x:Name="CountryLoadingRing"
+                                        Width="20"
+                                        Height="20"
+                                        IsActive="False"
+                                        Visibility="Collapsed"
+                                        HorizontalAlignment="Center" />
+
+                                    <ScrollViewer MaxHeight="240" VerticalScrollBarVisibility="Auto">
+                                        <StackPanel x:Name="CountryListPanel" Spacing="4" />
+                                    </ScrollViewer>
+                                </StackPanel>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
+                </StackPanel>
             </Grid>
 
             <!-- Status Line -->

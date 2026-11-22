@@ -661,4 +661,92 @@ public sealed class DialRadioTests : IDisposable
         Assert.Equal(RadioHotkeyDefaults.PlayPause, RadioHotkeyCatalog.GetConfiguredChord(reloaded, playSpec));
         Assert.Equal(RadioHotkeyDefaults.ToggleWindow, RadioHotkeyCatalog.GetConfiguredChord(reloaded, toggleSpec));
     }
+
+    [Fact]
+    public async Task RadioBrowserService_EnforcesMinBitrateInQueryAndResults()
+    {
+        const string apiJson = """
+            [
+              {
+                "stationuuid": "low-0",
+                "name": "Unknown Bitrate FM",
+                "url_resolved": "https://stream.example.invalid/0.mp3",
+                "countrycode": "NL",
+                "codec": "MP3",
+                "bitrate": 0
+              },
+              {
+                "stationuuid": "low-96",
+                "name": "Low 96k FM",
+                "url_resolved": "https://stream.example.invalid/96.mp3",
+                "countrycode": "NL",
+                "codec": "MP3",
+                "bitrate": 96
+              },
+              {
+                "stationuuid": "mid-128",
+                "name": "Mid 128k FM",
+                "url_resolved": "https://stream.example.invalid/128.mp3",
+                "countrycode": "NL",
+                "codec": "MP3",
+                "bitrate": 128
+              },
+              {
+                "stationuuid": "hi-192",
+                "name": "High 192k FM",
+                "url_resolved": "https://stream.example.invalid/192.mp3",
+                "countrycode": "NL",
+                "codec": "MP3",
+                "bitrate": 192
+              },
+              {
+                "stationuuid": "hi-320",
+                "name": "Ultra 320k FM",
+                "url_resolved": "https://stream.example.invalid/320.mp3",
+                "countrycode": "NL",
+                "codec": "MP3",
+                "bitrate": 320
+              }
+            ]
+            """;
+
+        var parsed = RadioBrowserService.ParseStationsJson(apiJson);
+        Assert.Equal(5, parsed.Count);
+        Assert.Equal(5, RadioBrowserService.FilterByMinBitrate(parsed, 0).Count);
+
+        var filtered128 = RadioBrowserService.FilterByMinBitrate(parsed, 128);
+        Assert.Equal(["Mid 128k FM", "High 192k FM", "Ultra 320k FM"], filtered128.Select(s => s.Name));
+
+        var filtered192 = RadioBrowserService.FilterByMinBitrate(parsed, 192);
+        Assert.Equal(["High 192k FM", "Ultra 320k FM"], filtered192.Select(s => s.Name));
+
+        var recordedUris = new List<Uri>();
+        using var stub = new StubJsonHandler(req =>
+        {
+            if (req.RequestUri is not null)
+            {
+                recordedUris.Add(req.RequestUri);
+            }
+
+            return apiJson;
+        });
+        using var service = new RadioBrowserService(stub);
+
+        var results = await service.SearchStationsAsync("rock", "NL", limit: 60, minBitrateKbps: 128);
+        Assert.Equal(["Mid 128k FM", "High 192k FM", "Ultra 320k FM"], results.Select(s => s.Name));
+        Assert.NotEmpty(recordedUris);
+        Assert.All(recordedUris, uri => Assert.Contains("bitrateMin=128", uri.Query, StringComparison.Ordinal));
+    }
+
+    private sealed class StubJsonHandler(Func<HttpRequestMessage, string> responder) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var json = responder(request);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            });
+        }
+    }
 }

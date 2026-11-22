@@ -23,6 +23,7 @@ public static class RadioOptions
     public const string HotkeyNextStation = "radio.hotkey.next";
     public const string HotkeyPreviousStation = "radio.hotkey.prev";
     public const string HotkeyMute = "radio.hotkey.mute";
+    public const string DiscoverMinBitrate = "radio.discover_min_bitrate";
 }
 
 /// <summary>
