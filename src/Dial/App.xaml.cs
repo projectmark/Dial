@@ -266,16 +266,26 @@ public sealed partial class App : Application
             ReleaseDate: new DateTime(2026, 11, 22),
             Changes: new ChangelogChange[]
             {
+                new ChangelogChange("Added", "Changelog.v012Alpha.AddedGitHubAutoUpdater"),
+                new ChangelogChange("Added", "Changelog.v012Alpha.AddedUpdateAndWhatsNewModals"),
+                new ChangelogChange("Changed", "Changelog.v012Alpha.ChangedReleaseManifestPipeline")
+            },
+            IsLatest: true));
+
+        changelog.RegisterRelease(new ChangelogRelease(
+            Version: "0.1.1-alpha",
+            ReleaseDate: new DateTime(2026, 11, 22),
+            Changes: new ChangelogChange[]
+            {
                 new ChangelogChange("Added", "Changelog.v011Alpha.AddedTitleBarCatchphraseAndLive"),
                 new ChangelogChange("Added", "Changelog.v011Alpha.AddedOnAirBadge"),
                 new ChangelogChange("Added", "Changelog.v011Alpha.AddedTrackLookup"),
                 new ChangelogChange("Added", "Changelog.v011Alpha.AddedDiscoverMinBitrate"),
-                new ChangelogChange("Added", "Changelog.v011Alpha.AddedAutoUpdater"),
                 new ChangelogChange("Changed", "Changelog.v011Alpha.ChangedPerformanceAndVolume"),
                 new ChangelogChange("Changed", "Changelog.v011Alpha.ChangedFeedbackWip"),
                 new ChangelogChange("Fixed", "Changelog.v011Alpha.FixedGeneralUi")
             },
-            IsLatest: true));
+            IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
             Version: "0.1.0-alpha",
