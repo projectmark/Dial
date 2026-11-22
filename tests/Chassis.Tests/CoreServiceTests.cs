@@ -50,6 +50,12 @@ public sealed class CoreServiceTests : IDisposable
         Assert.Equal("Chassis_SingleInstance_Chassis.Tests", AppVersion.SingleInstanceKey);
         Assert.Equal("CHASSISTESTS", AppVersion.ShareCodeAppPrefix);
         Assert.StartsWith("v", AppVersion.ShortDisplayVersion);
+
+        Assert.True(AppVersion.TryExtractGitHubSlug("https://github.com/projectmark/Dial.git", out var slug1));
+        Assert.Equal("projectmark/Dial", slug1);
+        Assert.True(AppVersion.TryExtractGitHubSlug("projectmark/Dial", out var slug2));
+        Assert.Equal("projectmark/Dial", slug2);
+        Assert.False(AppVersion.TryExtractGitHubSlug("https://evil.example/projectmark/Dial", out _));
     }
 
     [Fact]

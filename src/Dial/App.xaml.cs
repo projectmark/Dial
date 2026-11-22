@@ -270,6 +270,7 @@ public sealed partial class App : Application
                 new ChangelogChange("Added", "Changelog.v011Alpha.AddedOnAirBadge"),
                 new ChangelogChange("Added", "Changelog.v011Alpha.AddedTrackLookup"),
                 new ChangelogChange("Added", "Changelog.v011Alpha.AddedDiscoverMinBitrate"),
+                new ChangelogChange("Added", "Changelog.v011Alpha.AddedAutoUpdater"),
                 new ChangelogChange("Changed", "Changelog.v011Alpha.ChangedPerformanceAndVolume"),
                 new ChangelogChange("Changed", "Changelog.v011Alpha.ChangedFeedbackWip"),
                 new ChangelogChange("Fixed", "Changelog.v011Alpha.FixedGeneralUi")

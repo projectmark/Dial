@@ -20,6 +20,7 @@
     <AssemblyName>Dial</AssemblyName>
     <Product>Dial</Product>
     <AssemblyTitle>Dial</AssemblyTitle>
+    <RepositoryUrl>https://github.com/projectmark/Dial</RepositoryUrl>
     <ApplicationIcon>Assets\dial.ico</ApplicationIcon>
   </PropertyGroup>
 

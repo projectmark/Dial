@@ -1,0 +1,47 @@
+<ContentDialog
+    x:Class="Chassis.UI.Dialogs.ChassisWhatsNewDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    CornerRadius="8">
+
+    <StackPanel Spacing="12" MinWidth="440" MaxWidth="520" Padding="0,4,0,0">
+        <TextBlock x:Name="SubtitleBlock" FontSize="13" TextWrapping="Wrap" />
+
+        <Border
+            x:Name="ReleaseCard"
+            CornerRadius="8"
+            BorderThickness="1"
+            Padding="18,16">
+            <StackPanel Spacing="10">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock
+                        x:Name="VersionHeading"
+                        FontSize="18"
+                        FontWeight="SemiBold"
+                        VerticalAlignment="Center" />
+
+                    <Border
+                        x:Name="LatestPill"
+                        CornerRadius="10"
+                        BorderThickness="1"
+                        Padding="10,2"
+                        VerticalAlignment="Center">
+                        <TextBlock
+                            x:Name="LatestPillText"
+                            FontSize="11"
+                            FontWeight="SemiBold" />
+                    </Border>
+
+                    <TextBlock
+                        x:Name="DateText"
+                        FontSize="12"
+                        VerticalAlignment="Center" />
+                </StackPanel>
+
+                <ScrollViewer MaxHeight="300" VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="ChangesPanel" Spacing="8" Padding="0,2,4,0" />
+                </ScrollViewer>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</ContentDialog>

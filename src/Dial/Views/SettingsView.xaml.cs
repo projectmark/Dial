@@ -184,6 +184,14 @@ public sealed partial class SettingsView : UserControl
         MinimizeToTrayToggle.IsOn = _settings.GetOption(MinimizeToTrayOptionKey, true);
         StartMinimizedToggle.IsOn = _settings.Current.StartMinimized;
         TrayNotificationsToggle.IsOn = _settings.Current.ShowTrayNotifications;
+        UpdateFrequencyCombo.SelectedIndex = _settings.Current.UpdateCheckFrequency switch
+        {
+            UpdateCheckFrequency.Daily => 1,
+            UpdateCheckFrequency.Weekly => 2,
+            UpdateCheckFrequency.Manual => 3,
+            _ => 0
+        };
+        PreReleaseUpdatesToggle.IsOn = _settings.Current.IncludePreReleases;
         _isUpdating = false;
 
         if (rebuildSwatches)
@@ -441,6 +449,20 @@ public sealed partial class SettingsView : UserControl
         UpdatesCard.Description = _localization.GetString("Settings.Updates.DescTemplate", AppVersion.ShortDisplayVersion);
         CheckUpdatesBtn.Content = _localization["Settings.Updates.Action"];
         AutomationProperties.SetName(CheckUpdatesBtn, _localization["Settings.Updates.Action"]);
+
+        UpdateFrequencyCard.Title = _localization["Settings.Updates.Frequency.Title"];
+        UpdateFrequencyCard.Description = _localization["Settings.Updates.Frequency.Desc"];
+        AutomationProperties.SetName(UpdateFrequencyCombo, _localization["Settings.Updates.Frequency.Title"]);
+        _isUpdating = true;
+        UpdateFreqStartupItem.Content = _localization["Settings.Updates.Frequency.Startup"];
+        UpdateFreqDailyItem.Content = _localization["Settings.Updates.Frequency.Daily"];
+        UpdateFreqWeeklyItem.Content = _localization["Settings.Updates.Frequency.Weekly"];
+        UpdateFreqManualItem.Content = _localization["Settings.Updates.Frequency.Manual"];
+        _isUpdating = false;
+
+        PreReleaseUpdatesCard.Title = _localization["Settings.Updates.PreRelease.Title"];
+        PreReleaseUpdatesCard.Description = _localization["Settings.Updates.PreRelease.Desc"];
+        AutomationProperties.SetName(PreReleaseUpdatesToggle, _localization["Settings.Updates.PreRelease.Title"]);
     }
 
     private void ApplyThemeVisuals()
@@ -632,33 +654,88 @@ public sealed partial class SettingsView : UserControl
         Process.Start(new ProcessStartInfo(_paths.LogsDirectory) { UseShellExecute = true });
     }
 
-    private async void CheckUpdatesBtn_Click(object sender, RoutedEventArgs e)
+    private void UpdateFrequencyCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        var manifestCandidate = Path.Combine(AppContext.BaseDirectory, "releases.json");
-        UpdateStatusText.Visibility = Visibility.Visible;
-
-        if (!File.Exists(manifestCandidate))
+        if (_isUpdating)
         {
-            UpdateStatusText.Foreground = _theme.GetTextSecondaryBrush();
-            UpdateStatusText.Text = _localization["Settings.Updates.NoManifest"];
             return;
         }
 
-        var result = await _updates.CheckForUpdatesAsync(manifestCandidate);
-        if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+        var freq = UpdateFrequencyCombo.SelectedIndex switch
         {
-            UpdateStatusText.Foreground = _theme.GetCautionBrush();
-            UpdateStatusText.Text = result.ErrorMessage;
+            1 => UpdateCheckFrequency.Daily,
+            2 => UpdateCheckFrequency.Weekly,
+            3 => UpdateCheckFrequency.Manual,
+            _ => UpdateCheckFrequency.Startup
+        };
+
+        _settings.Update(s => s.UpdateCheckFrequency = freq);
+    }
+
+    private void PreReleaseUpdatesToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_isUpdating)
+        {
+            return;
         }
-        else if (result.IsUpdateAvailable)
+
+        _settings.Update(s => s.IncludePreReleases = PreReleaseUpdatesToggle.IsOn);
+    }
+
+    private async void CheckUpdatesBtn_Click(object sender, RoutedEventArgs e)
+    {
+        CheckUpdatesBtn.IsEnabled = false;
+        _theme.RefreshInteractiveButton(CheckUpdatesBtn);
+        UpdateStatusText.Visibility = Visibility.Visible;
+        UpdateStatusText.Foreground = _theme.GetTextSecondaryBrush();
+        UpdateStatusText.Text = _localization["Settings.Updates.Checking"];
+
+        try
         {
-            UpdateStatusText.Foreground = _theme.GetAdaptiveAccentBrush();
-            UpdateStatusText.Text = _localization.GetString("Settings.Updates.Available", result.LatestVersion ?? string.Empty);
+            UpdateCheckResult result;
+            if (!string.IsNullOrWhiteSpace(AppVersion.GitHubRepositorySlug))
+            {
+                result = await _updates.CheckForGitHubUpdatesAsync(
+                    includePreReleases: _settings.Current.IncludePreReleases);
+                _settings.Update(s => s.LastUpdateCheckUtc = DateTimeOffset.UtcNow);
+            }
+            else
+            {
+                var manifestCandidate = Path.Combine(AppContext.BaseDirectory, "releases.json");
+                if (!File.Exists(manifestCandidate))
+                {
+                    UpdateStatusText.Foreground = _theme.GetTextSecondaryBrush();
+                    UpdateStatusText.Text = _localization["Settings.Updates.NoManifest"];
+                    return;
+                }
+
+                result = await _updates.CheckForUpdatesAsync(manifestCandidate);
+            }
+
+            if (!string.IsNullOrWhiteSpace(result.ErrorMessage))
+            {
+                UpdateStatusText.Foreground = _theme.GetCautionBrush();
+                UpdateStatusText.Text = result.ErrorMessage;
+            }
+            else if (result.IsUpdateAvailable)
+            {
+                UpdateStatusText.Foreground = _theme.GetAdaptiveAccentBrush();
+                UpdateStatusText.Text = _localization.GetString("Settings.Updates.Available", result.LatestVersion ?? string.Empty);
+                if (MainWindow.Instance is not null)
+                {
+                    await MainWindow.Instance.ShowUpdatePromptAsync(result);
+                }
+            }
+            else
+            {
+                UpdateStatusText.Foreground = _theme.GetSuccessBrush();
+                UpdateStatusText.Text = _localization.GetString("Settings.Updates.UpToDate", AppVersion.ShortDisplayVersion);
+            }
         }
-        else
+        finally
         {
-            UpdateStatusText.Foreground = _theme.GetSuccessBrush();
-            UpdateStatusText.Text = _localization.GetString("Settings.Updates.UpToDate", AppVersion.ShortDisplayVersion);
+            CheckUpdatesBtn.IsEnabled = true;
+            _theme.RefreshInteractiveButton(CheckUpdatesBtn);
         }
     }
 }

@@ -137,4 +137,83 @@ public static class AppVersion
             return $"{token}/{BaseVersion}";
         }
     }
+
+    /// <summary>
+    /// Repository URL resolved dynamically from assembly metadata (<c>&lt;RepositoryUrl&gt;</c>), if configured.
+    /// </summary>
+    public static string? RepositoryUrl
+    {
+        get
+        {
+            var raw = ResolveTargetAssembly()
+                .GetCustomAttributes<AssemblyMetadataAttribute>()
+                .FirstOrDefault(a => string.Equals(a.Key, "RepositoryUrl", StringComparison.OrdinalIgnoreCase))
+                ?.Value;
+
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return null;
+            }
+
+            var clean = raw.Trim().TrimEnd('/');
+            if (clean.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+            {
+                clean = clean[..^4].TrimEnd('/');
+            }
+
+            return string.IsNullOrWhiteSpace(clean) ? null : clean;
+        }
+    }
+
+    /// <summary>
+    /// GitHub <c>owner/repo</c> slug derived from <see cref="RepositoryUrl"/>, if it points to github.com.
+    /// </summary>
+    public static string? GitHubRepositorySlug
+        => TryExtractGitHubSlug(RepositoryUrl, out var slug) ? slug : null;
+
+    /// <summary>
+    /// Extracts a normalized <c>owner/repo</c> slug from a GitHub URL or slug string.
+    /// </summary>
+    public static bool TryExtractGitHubSlug(string? repositoryUrlOrSlug, out string slug)
+    {
+        slug = string.Empty;
+        if (string.IsNullOrWhiteSpace(repositoryUrlOrSlug))
+        {
+            return false;
+        }
+
+        var trimmed = repositoryUrlOrSlug.Trim().TrimEnd('/');
+        if (trimmed.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = trimmed[..^4].TrimEnd('/');
+        }
+
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+        {
+            if (!string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length >= 2)
+            {
+                slug = $"{segments[0]}/{segments[1]}";
+                return true;
+            }
+
+            return false;
+        }
+
+        var parts = trimmed.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 2 &&
+            parts[0].All(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '.') &&
+            parts[1].All(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '.'))
+        {
+            slug = $"{parts[0]}/{parts[1]}";
+            return true;
+        }
+
+        return false;
+    }
 }

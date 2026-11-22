@@ -1,0 +1,71 @@
+name: Release Dial
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.1.2-alpha)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Resolve version from tag
+        id: ver
+        shell: pwsh
+        run: |
+          $rawTag = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "${{ inputs.tag }}" } else { "${{ github.ref_name }}" }
+          $clean = $rawTag.TrimStart('v', 'V')
+          if ($clean -match '^([0-9]+\.[0-9]+\.[0-9]+)(?:-(.+))?$') {
+            $baseVer = $Matches[1]
+            $pre = $Matches[2]
+          } else {
+            throw "Invalid SemVer tag '$rawTag'. Expected format: v<Major>.<Minor>.<Patch>[-<PreRelease>]"
+          }
+          "tag=$rawTag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "base_version=$baseVer" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "prerelease=$pre" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "is_prerelease=$([string]::IsNullOrWhiteSpace($pre) ? 'false' : 'true')" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Build AppxShim
+        run: dotnet build tools/AppxShim/AppxShim.csproj -c Release
+
+      - name: Run unit tests
+        run: dotnet test tests/Chassis.Tests/Chassis.Tests.csproj -c Release
+
+      - name: Build single-file release
+        shell: pwsh
+        run: |
+          $downloadBase = "https://github.com/${{ github.repository }}/releases/download/${{ steps.ver.outputs.tag }}"
+          powershell -ExecutionPolicy Bypass -File .\scripts\build-release.ps1 `
+            -Version "${{ steps.ver.outputs.base_version }}" `
+            -PreRelease "${{ steps.ver.outputs.prerelease }}" `
+            -DownloadBaseUrl "$downloadBase"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: Dial ${{ steps.ver.outputs.tag }}
+          prerelease: ${{ steps.ver.outputs.is_prerelease == 'true' }}
+          generate_release_notes: true
+          files: |
+            releases/latest/Dial.exe
+            releases/latest/releases.json
+            releases/latest/checksum.sha256

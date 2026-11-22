@@ -197,6 +197,33 @@
                             </StackPanel>
                         </controls:SettingsCard.ActionContent>
                     </controls:SettingsCard>
+
+                    <controls:SettingsCard x:Name="UpdateFrequencyCard" Glyph="&#xE823;">
+                        <controls:SettingsCard.ActionContent>
+                            <ComboBox
+                                x:Name="UpdateFrequencyCombo"
+                                Width="220"
+                                SelectionChanged="UpdateFrequencyCombo_SelectionChanged">
+                                <ComboBoxItem x:Name="UpdateFreqStartupItem" Tag="Startup" />
+                                <ComboBoxItem x:Name="UpdateFreqDailyItem" Tag="Daily" />
+                                <ComboBoxItem x:Name="UpdateFreqWeeklyItem" Tag="Weekly" />
+                                <ComboBoxItem x:Name="UpdateFreqManualItem" Tag="Manual" />
+                            </ComboBox>
+                        </controls:SettingsCard.ActionContent>
+                    </controls:SettingsCard>
+
+                    <controls:SettingsCard x:Name="PreReleaseUpdatesCard" Glyph="&#xEC7A;">
+                        <controls:SettingsCard.ActionContent>
+                            <ToggleSwitch
+                                x:Name="PreReleaseUpdatesToggle"
+                                MinWidth="0"
+                                Padding="0"
+                                HorizontalAlignment="Right"
+                                OnContent=""
+                                OffContent=""
+                                Toggled="PreReleaseUpdatesToggle_Toggled" />
+                        </controls:SettingsCard.ActionContent>
+                    </controls:SettingsCard>
                 </StackPanel>
             </StackPanel>
         </Grid>

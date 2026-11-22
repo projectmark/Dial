@@ -4,6 +4,7 @@ using Chassis.Core.Feedback;
 using Chassis.Core.Localization;
 using Chassis.Core.Settings;
 using Chassis.Core.Tray;
+using Chassis.Core.Updates;
 using Chassis.Core.Versioning;
 using Chassis.UI.Dialogs;
 using Chassis.UI.Navigation;
@@ -40,6 +41,7 @@ public sealed partial class MainWindow : Window
     private readonly IChangelogService _changelog;
     private readonly INavigationRegistry _navRegistry;
     private readonly ITrayService _tray;
+    private readonly IUpdateService _updates;
     private readonly IRadioPlayerService _player;
     private readonly ThemeManager _theme;
     private readonly Dictionary<string, UIElement> _viewCache = new(StringComparer.OrdinalIgnoreCase);
@@ -61,6 +63,9 @@ public sealed partial class MainWindow : Window
     private bool _preMiniMaximized;
     private SizeInt32 _miniLockedWindowSize;
     private bool _isInitializingBounds = true;
+    private bool _startupFlowsCompleted;
+    private bool _startupFlowsRunning;
+    private bool _isDialogOpen;
 
     public static MainWindow? Instance { get; private set; }
     public IntPtr Hwnd => _hwnd;
@@ -76,6 +81,7 @@ public sealed partial class MainWindow : Window
         _changelog = App.Services.GetRequiredService<IChangelogService>();
         _navRegistry = App.Services.GetRequiredService<INavigationRegistry>();
         _tray = App.Services.GetRequiredService<ITrayService>();
+        _updates = App.Services.GetRequiredService<IUpdateService>();
         _player = App.Services.GetRequiredService<IRadioPlayerService>();
         _theme = App.Services.GetRequiredService<ThemeManager>();
 
@@ -133,6 +139,7 @@ public sealed partial class MainWindow : Window
         _player.StateChanged += OnPlayerStateChanged;
 
         RootGrid.SizeChanged += OnRootSizeChanged;
+        RootGrid.Loaded += OnRootGridLoaded;
         Closed += OnWindowClosed;
 
         BuildNavigationBar();
@@ -176,21 +183,160 @@ public sealed partial class MainWindow : Window
 
     public async Task OpenFeedbackDialogAsync()
     {
-        if (RootGrid.XamlRoot is null)
+        if (RootGrid.XamlRoot is null || _isDialogOpen)
         {
             return;
         }
 
-        var dialog = new ChassisFeedbackDialog(
-            App.Services.GetRequiredService<IFeedbackService>(),
-            _localization,
-            _theme,
-            _hwnd)
+        _isDialogOpen = true;
+        try
         {
-            XamlRoot = RootGrid.XamlRoot
-        };
+            var dialog = new ChassisFeedbackDialog(
+                App.Services.GetRequiredService<IFeedbackService>(),
+                _localization,
+                _theme,
+                _hwnd)
+            {
+                XamlRoot = RootGrid.XamlRoot
+            };
 
-        await dialog.ShowAsync();
+            await dialog.ShowAsync();
+        }
+        finally
+        {
+            _isDialogOpen = false;
+        }
+    }
+
+    public async Task ShowUpdatePromptAsync(UpdateCheckResult result)
+    {
+        if (RootGrid.XamlRoot is null ||
+            _isDialogOpen ||
+            !result.IsUpdateAvailable ||
+            result.Manifest is null)
+        {
+            return;
+        }
+
+        _isDialogOpen = true;
+        try
+        {
+            var dialog = new ChassisUpdateDialog(
+                _updates,
+                _localization,
+                _theme,
+                result,
+                onBeforeRestart: targetVersion => _settings.Update(s => s.PendingWhatsNewVersion = targetVersion),
+                onRequestExit: App.RequestExit)
+            {
+                XamlRoot = RootGrid.XamlRoot
+            };
+
+            await dialog.ShowAsync();
+        }
+        finally
+        {
+            _isDialogOpen = false;
+        }
+    }
+
+    public async Task ShowWhatsNewDialogAsync()
+    {
+        if (RootGrid.XamlRoot is null || _isDialogOpen)
+        {
+            return;
+        }
+
+        var releases = _changelog.GetReleases();
+        var latestRelease = releases.FirstOrDefault(r => r.IsLatest) ?? releases.FirstOrDefault();
+        if (latestRelease is null)
+        {
+            return;
+        }
+
+        _isDialogOpen = true;
+        ContentDialogResult result;
+        try
+        {
+            var dialog = new ChassisWhatsNewDialog(latestRelease, _localization, _theme)
+            {
+                XamlRoot = RootGrid.XamlRoot
+            };
+
+            result = await dialog.ShowAsync();
+        }
+        finally
+        {
+            _isDialogOpen = false;
+            _changelog.MarkCurrentAsViewed();
+            if (!string.IsNullOrWhiteSpace(_settings.Current.PendingWhatsNewVersion))
+            {
+                _settings.Update(s => s.PendingWhatsNewVersion = null);
+            }
+        }
+
+        if (result == ContentDialogResult.Secondary)
+        {
+            OpenChangelog();
+        }
+    }
+
+    private void OnRootGridLoaded(object sender, RoutedEventArgs e)
+        => TriggerStartupFlowsIfPending();
+
+    private void TriggerStartupFlowsIfPending()
+    {
+        if (_startupFlowsCompleted || _startupFlowsRunning || _isCollapsedToTray || App.IsExiting)
+        {
+            return;
+        }
+
+        _ = RunStartupUpdateAndWhatsNewFlowsAsync();
+    }
+
+    private async Task RunStartupUpdateAndWhatsNewFlowsAsync()
+    {
+        _startupFlowsRunning = true;
+        try
+        {
+            await Task.Delay(1200);
+            if (App.IsExiting || _isCollapsedToTray || RootGrid.XamlRoot is null)
+            {
+                return;
+            }
+
+            _startupFlowsCompleted = true;
+
+            if (_updates.ShouldShowWhatsNew(_settings.Current))
+            {
+                await ShowWhatsNewDialogAsync();
+                return;
+            }
+
+            if (_updates.ShouldAutoCheck(_settings.Current, DateTimeOffset.UtcNow) &&
+                !string.IsNullOrWhiteSpace(AppVersion.GitHubRepositorySlug))
+            {
+                var result = await _updates.CheckForGitHubUpdatesAsync(
+                    includePreReleases: _settings.Current.IncludePreReleases);
+                _settings.Update(s => s.LastUpdateCheckUtc = DateTimeOffset.UtcNow);
+
+                if (result.IsUpdateAvailable &&
+                    result.Manifest is not null &&
+                    !_isCollapsedToTray &&
+                    !App.IsExiting)
+                {
+                    await ShowUpdatePromptAsync(result);
+                }
+            }
+        }
+        catch
+        {
+            // Background startup update checks are best-effort and never interrupt launch.
+        }
+        finally
+        {
+            _startupFlowsRunning = false;
+        }
     }
 
     public void ToggleMiniPlayer()
@@ -346,6 +492,7 @@ public sealed partial class MainWindow : Window
         }
 
         Activate();
+        TriggerStartupFlowsIfPending();
     }
 
     private void OnAppWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)

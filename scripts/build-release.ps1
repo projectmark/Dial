@@ -2,7 +2,8 @@ param (
     [string]$Version = "",
     [string]$PreRelease = "",
     [string]$ProjectPath = "",
-    [string]$ReleaseExeName = "release.exe"
+    [string]$ReleaseExeName = "release.exe",
+    [string]$DownloadBaseUrl = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -121,19 +122,46 @@ Write-Host "`n[2/4] Berekenen van SHA256 checksum..." -ForegroundColor Yellow
 $hash = (Get-FileHash -Path $sourceExe -Algorithm SHA256).Hash.ToLowerInvariant()
 Write-Host "      SHA256: $hash" -ForegroundColor Green
 
-# 7. Genereer releases.json manifest
+# 7. Genereer releases.json manifest (met GitHub Release URL indien RepositoryUrl of DownloadBaseUrl aanwezig is)
+$repoUrl = ($CsprojXml.Project.PropertyGroup.RepositoryUrl | Where-Object { $_ } | Select-Object -First 1)
+if ([string]::IsNullOrWhiteSpace($repoUrl) -and $PropsXml) {
+    $repoUrl = ($PropsXml.Project.PropertyGroup.RepositoryUrl | Where-Object { $_ } | Select-Object -First 1)
+    if ($repoUrl -is [System.Xml.XmlElement]) { $repoUrl = $repoUrl.InnerText }
+}
+if (-not [string]::IsNullOrWhiteSpace($repoUrl)) {
+    $repoUrl = "$repoUrl".Trim().TrimEnd('/')
+    if ($repoUrl.EndsWith(".git", [System.StringComparison]::OrdinalIgnoreCase)) {
+        $repoUrl = $repoUrl.Substring(0, $repoUrl.Length - 4).TrimEnd('/')
+    }
+}
+
+$resolvedDownloadUrl = if (-not [string]::IsNullOrWhiteSpace($DownloadBaseUrl)) {
+    "$($DownloadBaseUrl.TrimEnd('/'))/$AppName.exe"
+} elseif (-not [string]::IsNullOrWhiteSpace($repoUrl)) {
+    "$repoUrl/releases/download/v$FullInfoVersion/$AppName.exe"
+} else {
+    "releases/v$FullInfoVersion/$ReleaseExeName"
+}
+
+$resolvedNotesUrl = if (-not [string]::IsNullOrWhiteSpace($repoUrl)) {
+    "$repoUrl/releases/tag/v$FullInfoVersion"
+} else {
+    ""
+}
+
 $releaseManifest = [ordered]@{
-    application  = $AppName
-    version      = $FullInfoVersion
-    baseVersion  = $Version
-    preRelease   = $PreRelease
-    releaseDate  = (Get-Date -Format "yyyy-MM-dd")
-    fileName     = $ReleaseExeName
-    appBinary    = "$AppName.exe"
-    fileSizeMb   = $exeSizeMb
-    sha256       = $hash
-    downloadUrl  = "releases/v$FullInfoVersion/$ReleaseExeName"
-    mandatory    = $false
+    application     = $AppName
+    version         = $FullInfoVersion
+    baseVersion     = $Version
+    preRelease      = $PreRelease
+    releaseDate     = (Get-Date -Format "yyyy-MM-dd")
+    fileName        = $ReleaseExeName
+    appBinary       = "$AppName.exe"
+    fileSizeMb      = $exeSizeMb
+    sha256          = $hash
+    downloadUrl     = $resolvedDownloadUrl
+    releaseNotesUrl = $resolvedNotesUrl
+    mandatory       = $false
 }
 
 $manifestJson = $releaseManifest | ConvertTo-Json -Depth 5

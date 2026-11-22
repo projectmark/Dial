@@ -14,6 +14,17 @@ public enum ThemeMode
 }
 
 /// <summary>
+/// Supported automatic update check intervals.
+/// </summary>
+public enum UpdateCheckFrequency
+{
+    Startup = 0,
+    Daily = 1,
+    Weekly = 2,
+    Manual = 3
+}
+
+/// <summary>
 /// Persistent shell configuration serialized atomically to config/settings.json.
 /// </summary>
 public sealed class AppSettings
@@ -30,6 +41,10 @@ public sealed class AppSettings
     public bool StartMinimized { get; set; }
     public bool GlobalHotkeysEnabled { get; set; }
     public string ToggleWindowHotkey { get; set; } = "Ctrl+Shift+Space";
+    public UpdateCheckFrequency UpdateCheckFrequency { get; set; } = UpdateCheckFrequency.Startup;
+    public bool IncludePreReleases { get; set; } = !string.IsNullOrWhiteSpace(Versioning.AppVersion.PreReleaseTag);
+    public DateTimeOffset? LastUpdateCheckUtc { get; set; }
+    public string? PendingWhatsNewVersion { get; set; }
     public string? LastSeenVersion { get; set; }
     public int? WindowWidth { get; set; }
     public int? WindowHeight { get; set; }
