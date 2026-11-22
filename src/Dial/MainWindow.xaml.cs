@@ -104,6 +104,7 @@ public sealed partial class MainWindow : Window
                 _localization["TitleBar.FeedbackTooltip"],
                 _localization["TitleBar.HelpTooltip"],
                 _localization["TitleBar.VersionTooltip"]);
+            TitleBarControl.SetFeedbackEnabled(false);
             TitleBarControl.SetLogoImage(titleLogoPath);
         }
 

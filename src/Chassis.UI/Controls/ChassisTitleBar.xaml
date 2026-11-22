@@ -76,17 +76,22 @@
             VerticalAlignment="Center"
             Spacing="6"
             Margin="8,0,0,0">
-            <Button
-                x:Name="FeedbackButton"
-                Height="28"
-                Padding="8,0"
-                CornerRadius="6"
-                Click="FeedbackButton_Click">
-                <FontIcon
-                    FontFamily="Segoe Fluent Icons"
-                    Glyph="&#xED15;"
-                    FontSize="14" />
-            </Button>
+            <Border
+                x:Name="FeedbackTooltipHost"
+                Background="Transparent"
+                CornerRadius="6">
+                <Button
+                    x:Name="FeedbackButton"
+                    Height="28"
+                    Padding="8,0"
+                    CornerRadius="6"
+                    Click="FeedbackButton_Click">
+                    <FontIcon
+                        FontFamily="Segoe Fluent Icons"
+                        Glyph="&#xED15;"
+                        FontSize="14" />
+                </Button>
+            </Border>
 
             <Button
                 x:Name="HelpButton"

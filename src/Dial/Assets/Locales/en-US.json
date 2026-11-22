@@ -7,7 +7,7 @@
   "Nav.Feedback": "Feedback & Bugs",
   "Nav.Settings": "Settings",
   "TitleBar.VersionTooltip": "View release notes and changelog",
-  "TitleBar.FeedbackTooltip": "Report feedback or a bug",
+  "TitleBar.FeedbackTooltip": "Feedback & bug reports (Work in progress — GitHub issue integration coming soon)",
   "TitleBar.HelpTooltip": "Open Knowledge Base & Changelog (F1)",
   "Tray.Open": "Open Dial",
   "Tray.Exit": "Exit",

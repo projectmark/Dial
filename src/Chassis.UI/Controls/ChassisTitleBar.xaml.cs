@@ -21,6 +21,7 @@ public sealed partial class ChassisTitleBar : UserControl
     private AppWindow? _appWindow;
     private ThemeManager? _theme;
     private RectInt32 _lastDragRect;
+    private string _feedbackTooltip = string.Empty;
 
     public ChassisTitleBar()
     {
@@ -69,7 +70,8 @@ public sealed partial class ChassisTitleBar : UserControl
 
     public void UpdateLabels(string feedbackTooltip, string helpTooltip, string versionTooltip)
     {
-        ToolTipService.SetToolTip(FeedbackButton, feedbackTooltip);
+        _feedbackTooltip = feedbackTooltip;
+        ApplyFeedbackTooltip();
         AutomationProperties.SetName(FeedbackButton, feedbackTooltip);
 
         ToolTipService.SetToolTip(HelpButton, helpTooltip);
@@ -77,6 +79,28 @@ public sealed partial class ChassisTitleBar : UserControl
 
         ToolTipService.SetToolTip(VersionBadgeButton, versionTooltip);
         AutomationProperties.SetName(VersionBadgeButton, versionTooltip);
+    }
+
+    public void SetFeedbackEnabled(bool isEnabled)
+    {
+        FeedbackButton.IsEnabled = isEnabled;
+        ApplyFeedbackTooltip();
+        _theme?.RefreshInteractiveButton(FeedbackButton);
+    }
+
+    private void ApplyFeedbackTooltip()
+    {
+        if (FeedbackButton.IsEnabled)
+        {
+            ToolTipService.SetToolTip(FeedbackTooltipHost, null);
+            ToolTipService.SetToolTip(FeedbackButton, _feedbackTooltip);
+        }
+        else
+        {
+            // Disabled WinUI buttons do not receive hover events, so host the tooltip on the enabled wrapper.
+            ToolTipService.SetToolTip(FeedbackButton, null);
+            ToolTipService.SetToolTip(FeedbackTooltipHost, _feedbackTooltip);
+        }
     }
 
     public void SetUnreadChangelogState(bool hasUnread)
