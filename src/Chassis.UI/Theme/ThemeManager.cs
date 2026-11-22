@@ -39,12 +39,35 @@ public sealed class ThemeManager
         public bool IsPressed { get; set; }
     }
 
+    private sealed record ThemePalette(
+        bool IsDark,
+        Color AdaptiveAccentColor,
+        SolidColorBrush AdaptiveAccent,
+        SolidColorBrush AdaptiveAccentTint,
+        SolidColorBrush TextPrimary,
+        SolidColorBrush TextSecondary,
+        SolidColorBrush TextDisabled,
+        SolidColorBrush CardBackground,
+        SolidColorBrush CardBorder,
+        SolidColorBrush Success,
+        SolidColorBrush Caution,
+        SolidColorBrush Critical,
+        SolidColorBrush ButtonRestBg,
+        SolidColorBrush ButtonHoverBg,
+        SolidColorBrush ButtonPressedBg,
+        SolidColorBrush ButtonDisabledBg,
+        SolidColorBrush ButtonRestBorder,
+        SolidColorBrush ButtonRestFg,
+        SolidColorBrush ButtonPressedFg,
+        SolidColorBrush ButtonDisabledFg);
+
     private readonly ISettingsService _settings;
     private readonly UISettings _uiSettings = new();
     private readonly ConditionalWeakTable<Button, InteractiveButtonState> _buttonStates = new();
     private Window? _attachedWindow;
     private FrameworkElement? _rootElement;
     private bool _systemIsDark;
+    private ThemePalette? _palette;
 
     public ThemeManager(ISettingsService settings)
     {
@@ -72,47 +95,68 @@ public sealed class ThemeManager
     public void RefreshFromSettings()
     {
         _systemIsDark = DetectSystemDarkTheme();
+        _palette = null;
         ApplyToAttachedWindow();
         ThemeChanged?.Invoke();
     }
 
-    public Color GetAdaptiveAccentColor()
+    public Color GetAdaptiveAccentColor() => GetOrCreatePalette().AdaptiveAccentColor;
+
+    public SolidColorBrush GetAdaptiveAccentBrush() => GetOrCreatePalette().AdaptiveAccent;
+
+    public SolidColorBrush GetAdaptiveAccentTintBrush() => GetOrCreatePalette().AdaptiveAccentTint;
+
+    public SolidColorBrush GetTextPrimaryBrush() => GetOrCreatePalette().TextPrimary;
+
+    public SolidColorBrush GetTextSecondaryBrush() => GetOrCreatePalette().TextSecondary;
+
+    public SolidColorBrush GetTextDisabledBrush() => GetOrCreatePalette().TextDisabled;
+
+    public SolidColorBrush GetCardBackgroundBrush() => GetOrCreatePalette().CardBackground;
+
+    public SolidColorBrush GetCardBorderBrush() => GetOrCreatePalette().CardBorder;
+
+    public SolidColorBrush GetSuccessBrush() => GetOrCreatePalette().Success;
+
+    public SolidColorBrush GetCautionBrush() => GetOrCreatePalette().Caution;
+
+    public SolidColorBrush GetCriticalBrush() => GetOrCreatePalette().Critical;
+
+    private ThemePalette GetOrCreatePalette()
     {
-        var baseColor = ResolveRawAccentColor();
-        return AdaptForWcagAa(baseColor, IsDarkTheme);
+        if (_palette is not null)
+        {
+            return _palette;
+        }
+
+        var isDark = IsDarkTheme;
+        var accent = AdaptForWcagAa(ResolveRawAccentColor(), isDark);
+        var accentTint = Color.FromArgb(isDark ? (byte)0x26 : (byte)0x18, accent.R, accent.G, accent.B);
+
+        _palette = new ThemePalette(
+            IsDark: isDark,
+            AdaptiveAccentColor: accent,
+            AdaptiveAccent: new SolidColorBrush(accent),
+            AdaptiveAccentTint: new SolidColorBrush(accentTint),
+            TextPrimary: new SolidColorBrush(isDark ? Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xE4, 0x00, 0x00, 0x00)),
+            TextSecondary: new SolidColorBrush(isDark ? Color.FromArgb(0xC8, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x96, 0x00, 0x00, 0x00)),
+            TextDisabled: new SolidColorBrush(isDark ? Color.FromArgb(0x5D, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x5C, 0x00, 0x00, 0x00)),
+            CardBackground: new SolidColorBrush(isDark ? Color.FromArgb(0x18, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xC8, 0xFF, 0xFF, 0xFF)),
+            CardBorder: new SolidColorBrush(isDark ? Color.FromArgb(0x28, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x14, 0x00, 0x00, 0x00)),
+            Success: new SolidColorBrush(isDark ? Color.FromArgb(0xFF, 0x6C, 0xCB, 0x5F) : Color.FromArgb(0xFF, 0x0F, 0x7B, 0x0F)),
+            Caution: new SolidColorBrush(isDark ? Color.FromArgb(0xFF, 0xFC, 0xE1, 0x00) : Color.FromArgb(0xFF, 0x9D, 0x5D, 0x00)),
+            Critical: new SolidColorBrush(isDark ? Color.FromArgb(0xFF, 0xFF, 0x99, 0xA4) : Color.FromArgb(0xFF, 0xC4, 0x2B, 0x1C)),
+            ButtonRestBg: new SolidColorBrush(isDark ? Color.FromArgb(0x1F, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xF4, 0xFF, 0xFF, 0xFF)),
+            ButtonHoverBg: new SolidColorBrush(isDark ? Color.FromArgb(0x2E, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xFF, 0xEA, 0xEA, 0xEA)),
+            ButtonPressedBg: new SolidColorBrush(isDark ? Color.FromArgb(0x12, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xFF, 0xDA, 0xDA, 0xDA)),
+            ButtonDisabledBg: new SolidColorBrush(isDark ? Color.FromArgb(0x0D, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x70, 0xF4, 0xF4, 0xF4)),
+            ButtonRestBorder: new SolidColorBrush(isDark ? Color.FromArgb(0x2E, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x1A, 0x00, 0x00, 0x00)),
+            ButtonRestFg: new SolidColorBrush(isDark ? Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xE4, 0x00, 0x00, 0x00)),
+            ButtonPressedFg: new SolidColorBrush(isDark ? Color.FromArgb(0xC8, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x96, 0x00, 0x00, 0x00)),
+            ButtonDisabledFg: new SolidColorBrush(isDark ? Color.FromArgb(0x5D, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x5C, 0x00, 0x00, 0x00)));
+
+        return _palette;
     }
-
-    public SolidColorBrush GetAdaptiveAccentBrush() => new(GetAdaptiveAccentColor());
-
-    public SolidColorBrush GetAdaptiveAccentTintBrush()
-    {
-        var c = GetAdaptiveAccentColor();
-        return new SolidColorBrush(Color.FromArgb(IsDarkTheme ? (byte)0x26 : (byte)0x18, c.R, c.G, c.B));
-    }
-
-    public SolidColorBrush GetTextPrimaryBrush()
-        => new(IsDarkTheme ? Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xE4, 0x00, 0x00, 0x00));
-
-    public SolidColorBrush GetTextSecondaryBrush()
-        => new(IsDarkTheme ? Color.FromArgb(0xC8, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x96, 0x00, 0x00, 0x00));
-
-    public SolidColorBrush GetTextDisabledBrush()
-        => new(IsDarkTheme ? Color.FromArgb(0x5D, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x5C, 0x00, 0x00, 0x00));
-
-    public SolidColorBrush GetCardBackgroundBrush()
-        => new(IsDarkTheme ? Color.FromArgb(0x18, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xC8, 0xFF, 0xFF, 0xFF));
-
-    public SolidColorBrush GetCardBorderBrush()
-        => new(IsDarkTheme ? Color.FromArgb(0x28, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x14, 0x00, 0x00, 0x00));
-
-    public SolidColorBrush GetSuccessBrush()
-        => new(IsDarkTheme ? Color.FromArgb(0xFF, 0x6C, 0xCB, 0x5F) : Color.FromArgb(0xFF, 0x0F, 0x7B, 0x0F));
-
-    public SolidColorBrush GetCautionBrush()
-        => new(IsDarkTheme ? Color.FromArgb(0xFF, 0xFC, 0xE1, 0x00) : Color.FromArgb(0xFF, 0x9D, 0x5D, 0x00));
-
-    public SolidColorBrush GetCriticalBrush()
-        => new(IsDarkTheme ? Color.FromArgb(0xFF, 0xFF, 0x99, 0xA4) : Color.FromArgb(0xFF, 0xC4, 0x2B, 0x1C));
 
     /// <summary>
     /// Attaches 5-state Fluent 2 feedback without overwriting <see cref="FrameworkElement.Tag"/>.
@@ -203,60 +247,51 @@ public sealed class ThemeManager
         button.FontWeight = FontWeights.SemiBold;
         button.BorderThickness = new Thickness(1);
 
-        var restBg = IsDarkTheme ? Color.FromArgb(0x1F, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xF4, 0xFF, 0xFF, 0xFF);
-        var hoverBg = IsDarkTheme ? Color.FromArgb(0x2E, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xFF, 0xEA, 0xEA, 0xEA);
-        var pressedBg = IsDarkTheme ? Color.FromArgb(0x12, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xFF, 0xDA, 0xDA, 0xDA);
-        var disabledBg = IsDarkTheme ? Color.FromArgb(0x0D, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x70, 0xF4, 0xF4, 0xF4);
-
-        var restBorder = IsDarkTheme ? Color.FromArgb(0x2E, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x1A, 0x00, 0x00, 0x00);
-        var restFg = IsDarkTheme ? Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0xE4, 0x00, 0x00, 0x00);
-        var pressedFg = IsDarkTheme ? Color.FromArgb(0xC8, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x96, 0x00, 0x00, 0x00);
-        var disabledFg = IsDarkTheme ? Color.FromArgb(0x5D, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x5C, 0x00, 0x00, 0x00);
-
-        var accent = GetAdaptiveAccentColor();
+        var palette = GetOrCreatePalette();
         var isSelected = state.IsSelected();
 
-        var activeBorderColor = isSelected ? accent : restBorder;
-        var activeRestFg = isSelected ? accent : restFg;
+        var activeBorderBrush = isSelected ? palette.AdaptiveAccent : palette.ButtonRestBorder;
+        var activeRestFg = isSelected ? palette.AdaptiveAccent : palette.ButtonRestFg;
+        var activePressedFg = isSelected ? palette.AdaptiveAccent : palette.ButtonPressedFg;
 
-        button.Resources["ButtonBackground"] = new SolidColorBrush(restBg);
-        button.Resources["ButtonBackgroundPointerOver"] = new SolidColorBrush(hoverBg);
-        button.Resources["ButtonBackgroundPressed"] = new SolidColorBrush(pressedBg);
-        button.Resources["ButtonBackgroundDisabled"] = new SolidColorBrush(disabledBg);
+        button.Resources["ButtonBackground"] = palette.ButtonRestBg;
+        button.Resources["ButtonBackgroundPointerOver"] = palette.ButtonHoverBg;
+        button.Resources["ButtonBackgroundPressed"] = palette.ButtonPressedBg;
+        button.Resources["ButtonBackgroundDisabled"] = palette.ButtonDisabledBg;
 
-        button.Resources["ButtonBorderBrush"] = new SolidColorBrush(activeBorderColor);
-        button.Resources["ButtonBorderBrushPointerOver"] = new SolidColorBrush(activeBorderColor);
-        button.Resources["ButtonBorderBrushPressed"] = new SolidColorBrush(activeBorderColor);
-        button.Resources["ButtonBorderBrushDisabled"] = new SolidColorBrush(restBorder);
+        button.Resources["ButtonBorderBrush"] = activeBorderBrush;
+        button.Resources["ButtonBorderBrushPointerOver"] = activeBorderBrush;
+        button.Resources["ButtonBorderBrushPressed"] = activeBorderBrush;
+        button.Resources["ButtonBorderBrushDisabled"] = palette.ButtonRestBorder;
 
-        button.Resources["ButtonForeground"] = new SolidColorBrush(activeRestFg);
-        button.Resources["ButtonForegroundPointerOver"] = new SolidColorBrush(activeRestFg);
-        button.Resources["ButtonForegroundPressed"] = new SolidColorBrush(isSelected ? accent : pressedFg);
-        button.Resources["ButtonForegroundDisabled"] = new SolidColorBrush(disabledFg);
+        button.Resources["ButtonForeground"] = activeRestFg;
+        button.Resources["ButtonForegroundPointerOver"] = activeRestFg;
+        button.Resources["ButtonForegroundPressed"] = activePressedFg;
+        button.Resources["ButtonForegroundDisabled"] = palette.ButtonDisabledFg;
 
         if (!button.IsEnabled)
         {
-            button.Background = new SolidColorBrush(disabledBg);
-            button.BorderBrush = new SolidColorBrush(restBorder);
-            button.Foreground = new SolidColorBrush(disabledFg);
+            button.Background = palette.ButtonDisabledBg;
+            button.BorderBrush = palette.ButtonRestBorder;
+            button.Foreground = palette.ButtonDisabledFg;
         }
         else if (state.IsPressed)
         {
-            button.Background = new SolidColorBrush(pressedBg);
-            button.BorderBrush = new SolidColorBrush(activeBorderColor);
-            button.Foreground = new SolidColorBrush(isSelected ? accent : pressedFg);
+            button.Background = palette.ButtonPressedBg;
+            button.BorderBrush = activeBorderBrush;
+            button.Foreground = activePressedFg;
         }
         else if (state.IsHovered)
         {
-            button.Background = new SolidColorBrush(hoverBg);
-            button.BorderBrush = new SolidColorBrush(activeBorderColor);
-            button.Foreground = new SolidColorBrush(activeRestFg);
+            button.Background = palette.ButtonHoverBg;
+            button.BorderBrush = activeBorderBrush;
+            button.Foreground = activeRestFg;
         }
         else
         {
-            button.Background = new SolidColorBrush(restBg);
-            button.BorderBrush = new SolidColorBrush(activeBorderColor);
-            button.Foreground = new SolidColorBrush(activeRestFg);
+            button.Background = palette.ButtonRestBg;
+            button.BorderBrush = activeBorderBrush;
+            button.Foreground = activeRestFg;
         }
     }
 
@@ -272,6 +307,7 @@ public sealed class ThemeManager
                 ApplyToAttachedWindow();
                 if (previousDark != _systemIsDark || _settings.Current.UseSystemAccentColor)
                 {
+                    _palette = null;
                     ThemeChanged?.Invoke();
                 }
             });

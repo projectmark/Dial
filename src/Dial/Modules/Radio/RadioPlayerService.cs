@@ -17,6 +17,7 @@ public interface IRadioPlayerService : IDisposable
     RadioStateSnapshot Current { get; }
     event Action<RadioStateSnapshot>? StateChanged;
     event Action<double, bool>? VolumeChanged;
+    event Action<double, int>? BufferLevelChanged;
     event Action? StationsChanged;
 
     Task InitializeAsync(CancellationToken ct = default);
@@ -148,6 +149,7 @@ public sealed class RadioPlayerService : IRadioPlayerService
 
     public event Action<RadioStateSnapshot>? StateChanged;
     public event Action<double, bool>? VolumeChanged;
+    public event Action<double, int>? BufferLevelChanged;
     public event Action? StationsChanged;
 
     public async Task InitializeAsync(CancellationToken ct = default)
@@ -906,7 +908,7 @@ public sealed class RadioPlayerService : IRadioPlayerService
 
         if (shouldNotify)
         {
-            NotifyStateChanged();
+            BufferLevelChanged?.Invoke(bufferedSeconds, targetSeconds);
         }
     }
 

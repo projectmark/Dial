@@ -263,12 +263,25 @@ public sealed partial class App : Application
         var changelog = Services.GetRequiredService<IChangelogService>();
         changelog.RegisterRelease(new ChangelogRelease(
             Version: AppVersion.InformationalVersion,
+            ReleaseDate: new DateTime(2026, 11, 22),
+            Changes: new ChangelogChange[]
+            {
+                new ChangelogChange("Added", "Changelog.v011Alpha.AddedTrackLookup"),
+                new ChangelogChange("Added", "Changelog.v011Alpha.AddedDiscoverMinBitrate"),
+                new ChangelogChange("Changed", "Changelog.v011Alpha.ChangedPerformanceAndVolume"),
+                new ChangelogChange("Changed", "Changelog.v011Alpha.ChangedFeedbackWip"),
+                new ChangelogChange("Fixed", "Changelog.v011Alpha.FixedF1Tooltip")
+            },
+            IsLatest: true));
+
+        changelog.RegisterRelease(new ChangelogRelease(
+            Version: "0.1.0-alpha",
             ReleaseDate: new DateTime(2026, 11, 21),
             Changes: new ChangelogChange[]
             {
                 new ChangelogChange("Added", "Changelog.v010Alpha.Milestone")
             },
-            IsLatest: true));
+            IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
             Version: "0.3.2 (testing)",

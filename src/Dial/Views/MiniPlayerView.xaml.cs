@@ -76,7 +76,7 @@ public sealed partial class MiniPlayerView : UserControl
 
         ApplyLocalization();
         RenderState(_player.Current);
-        _vuTimer.Start();
+        EnsureVuTimerState();
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -91,6 +91,15 @@ public sealed partial class MiniPlayerView : UserControl
             _theme.ThemeChanged -= OnThemeChanged;
             _localization.LanguageChanged -= OnLanguageChanged;
             _isSubscribed = false;
+        }
+    }
+
+    private void EnsureVuTimerState()
+    {
+        var snap = _player.Current;
+        if (snap.State == RadioPlaybackState.Playing && !snap.IsMuted && !_vuTimer.IsRunning)
+        {
+            _vuTimer.Start();
         }
     }
 
@@ -110,6 +119,11 @@ public sealed partial class MiniPlayerView : UserControl
 
         LeftVuScale.ScaleX = _smoothedLeft;
         RightVuScale.ScaleX = _smoothedRight;
+
+        if (targetL == 0f && targetR == 0f && _smoothedLeft == 0f && _smoothedRight == 0f)
+        {
+            _vuTimer.Stop();
+        }
     }
 
     private static float SmoothVuLevel(float current, float target)
@@ -128,6 +142,7 @@ public sealed partial class MiniPlayerView : UserControl
             if (_isSubscribed)
             {
                 RenderState(snapshot);
+                EnsureVuTimerState();
             }
         });
 
@@ -137,6 +152,7 @@ public sealed partial class MiniPlayerView : UserControl
             if (_isSubscribed && !_isUpdatingSliderFromInput)
             {
                 ApplyVolumeUi(volume, isMuted, updateSlider: true);
+                EnsureVuTimerState();
             }
         });
 

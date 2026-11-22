@@ -59,11 +59,24 @@ public sealed class RadioModule : IChassisModule
         var hotkeys = services.GetRequiredService<IHotkeyService>();
 
         var lastSleepMinutes = -1;
+        var lastTraySignature = string.Empty;
 
         void RebuildTrayMenu()
         {
             var snapshot = player.Current;
             var isLive = snapshot.State is RadioPlaybackState.Playing or RadioPlaybackState.Buffering;
+            var sleepMins = sleepTimer.IsActive
+                ? Math.Max(1, (int)Math.Ceiling(sleepTimer.Remaining.TotalMinutes))
+                : 0;
+            var topStations = player.Stations.Take(12).ToList();
+            var sig = $"{isLive}|{snapshot.ActiveStation?.Id}|{snapshot.IsMuted}|{sleepMins}|{localization.CurrentCulture}|{string.Join(",", topStations.Select(s => $"{s.Id}:{s.Name}"))}";
+            if (string.Equals(sig, lastTraySignature, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            lastTraySignature = sig;
+
             var items = new List<TrayMenuItemDescriptor>
             {
                 new(
@@ -72,18 +85,17 @@ public sealed class RadioModule : IChassisModule
                     () => _ = player.TogglePlayPauseAsync())
             };
 
-            if (sleepTimer.IsActive)
+            if (sleepMins > 0)
             {
-                var mins = Math.Max(1, (int)Math.Ceiling(sleepTimer.Remaining.TotalMinutes));
                 items.Add(new TrayMenuItemDescriptor(
                     "radio.sleep.cancel",
-                    localization.GetString("Tray.SleepTimerCancel", mins),
+                    localization.GetString("Tray.SleepTimerCancel", sleepMins),
                     sleepTimer.Cancel));
             }
 
             items.Add(new TrayMenuItemDescriptor("radio.sep1", string.Empty, static () => { }, IsSeparator: true));
 
-            foreach (var station in player.Stations.Take(12))
+            foreach (var station in topStations)
             {
                 var isActive = string.Equals(snapshot.ActiveStation?.Id, station.Id, StringComparison.OrdinalIgnoreCase);
                 var label = isActive ? $"● {station.Name}" : $"   {station.Name}";

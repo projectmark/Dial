@@ -116,6 +116,7 @@ public sealed partial class HomeView : UserControl
         {
             _player.StateChanged += OnPlayerStateChanged;
             _player.VolumeChanged += OnPlayerVolumeChanged;
+            _player.BufferLevelChanged += OnPlayerBufferLevelChanged;
             _player.StationsChanged += OnStationsChanged;
             _sleepTimer.RemainingChanged += OnSleepRemainingChanged;
             _stats.SessionElapsedChanged += OnSessionElapsedChanged;
@@ -136,6 +137,7 @@ public sealed partial class HomeView : UserControl
         {
             _player.StateChanged -= OnPlayerStateChanged;
             _player.VolumeChanged -= OnPlayerVolumeChanged;
+            _player.BufferLevelChanged -= OnPlayerBufferLevelChanged;
             _player.StationsChanged -= OnStationsChanged;
             _sleepTimer.RemainingChanged -= OnSleepRemainingChanged;
             _stats.SessionElapsedChanged -= OnSessionElapsedChanged;
@@ -161,6 +163,15 @@ public sealed partial class HomeView : UserControl
             if (_isSubscribed && !_isUpdatingSliderFromInput)
             {
                 ApplyVolumeUi(volume, isMuted, updateSlider: true);
+            }
+        });
+
+    private void OnPlayerBufferLevelChanged(double _, int __)
+        => DispatcherQueue?.TryEnqueue(() =>
+        {
+            if (_isSubscribed)
+            {
+                UpdateHeroMetadata(_player.Current, _stats.CurrentSessionElapsed);
             }
         });
 
