@@ -271,8 +271,7 @@ public sealed partial class App : Application
                 new ChangelogChange("Added", "Changelog.v011Alpha.AddedDiscoverMinBitrate"),
                 new ChangelogChange("Changed", "Changelog.v011Alpha.ChangedPerformanceAndVolume"),
                 new ChangelogChange("Changed", "Changelog.v011Alpha.ChangedFeedbackWip"),
-                new ChangelogChange("Fixed", "Changelog.v011Alpha.FixedChangelogUnreadHighlight"),
-                new ChangelogChange("Fixed", "Changelog.v011Alpha.FixedF1Tooltip")
+                new ChangelogChange("Fixed", "Changelog.v011Alpha.FixedGeneralUi")
             },
             IsLatest: true));
 
