@@ -206,7 +206,7 @@ public sealed partial class App : Application
             TitleKey: "KB.Article.Stations.Title",
             SummaryKey: "KB.Article.Stations.Summary",
             BodyKey: "KB.Article.Stations.Body",
-            BadgeText: "40k+ Streams",
+            BadgeText: "40.000+ Zenders",
             CopyableReference: "https://api.radio-browser.info",
             Order: 1));
 
@@ -217,7 +217,7 @@ public sealed partial class App : Application
             SummaryKey: "KB.Article.StreamBuffer.Summary",
             BodyKey: "KB.Article.StreamBuffer.Body",
             BadgeText: "2s–30s Buffer",
-            CopyableReference: "BufferedFrameMediaSource -> MediaStreamSource",
+            CopyableReference: "Instellingen → Radio",
             Order: 2));
 
         kb.RegisterArticle(new KnowledgeArticle(
@@ -226,8 +226,8 @@ public sealed partial class App : Application
             TitleKey: "KB.Article.TimerMini.Title",
             SummaryKey: "KB.Article.TimerMini.Summary",
             BodyKey: "KB.Article.TimerMini.Body",
-            BadgeText: "Ctrl+M • VU",
-            CopyableReference: "Mini-player (420x208) • WASAPI L/R VU",
+            BadgeText: "Ctrl+M • Timer",
+            CopyableReference: "Ctrl+M",
             Order: 3));
 
         kb.RegisterArticle(new KnowledgeArticle(
@@ -236,7 +236,7 @@ public sealed partial class App : Application
             TitleKey: "KB.Article.Hotkeys.Title",
             SummaryKey: "KB.Article.Hotkeys.Summary",
             BodyKey: "KB.Article.Hotkeys.Body",
-            BadgeText: "Ctrl+Alt+Shift",
+            BadgeText: "Sneltoetsen",
             CopyableReference: $"{RadioHotkeyDefaults.PlayPause} / {RadioHotkeyDefaults.Next} / {RadioHotkeyDefaults.Prev} / {RadioHotkeyDefaults.Mute} • {RadioHotkeyDefaults.ToggleWindow}",
             Order: 4));
 
@@ -246,8 +246,8 @@ public sealed partial class App : Application
             TitleKey: "KB.Article.Tray.Title",
             SummaryKey: "KB.Article.Tray.Summary",
             BodyKey: "KB.Article.Tray.Body",
-            BadgeText: "Tray & GC",
-            CopyableReference: "CollapseToTray() -> GC.Collect(1)",
+            BadgeText: "Systeemvak",
+            CopyableReference: "Instellingen → Systeemvak & Achtergrond",
             Order: 5));
 
         kb.RegisterArticle(new KnowledgeArticle(
