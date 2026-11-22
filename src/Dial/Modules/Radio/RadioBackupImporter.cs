@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Chassis.Core.Data;
 
@@ -8,6 +10,8 @@ namespace Dial.Modules.Radio;
 /// </summary>
 public static class RadioBackupImporter
 {
+    public const int MaxImportPayloadBytes = 8 * 1024 * 1024;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -21,6 +25,11 @@ public static class RadioBackupImporter
         if (string.IsNullOrWhiteSpace(json))
         {
             throw new InvalidDataException("Backup JSON is empty.");
+        }
+
+        if (Encoding.UTF8.GetByteCount(json) > MaxImportPayloadBytes)
+        {
+            throw new InvalidDataException("Backup JSON exceeds maximum allowed size.");
         }
 
         using var doc = JsonDocument.Parse(json);
@@ -56,7 +65,7 @@ public static class RadioBackupImporter
 
             var rawId = GetString(el, "id").Trim();
             var stationId = string.IsNullOrWhiteSpace(rawId)
-                ? $"radioh-{Math.Abs(url.GetHashCode(StringComparison.OrdinalIgnoreCase)):x8}"
+                ? $"radioh-{ComputeStableShortHash(url)}"
                 : $"radioh-{rawId}";
 
             var sortOrder = GetInt(el, "manualSortingId", int.MaxValue);
@@ -98,6 +107,11 @@ public static class RadioBackupImporter
             throw new InvalidDataException("Import input is empty.");
         }
 
+        if (Encoding.UTF8.GetByteCount(rawInput) > MaxImportPayloadBytes * 2)
+        {
+            throw new InvalidDataException("Import payload exceeds maximum allowed size.");
+        }
+
         var trimmed = rawInput.Trim();
         if (trimmed.StartsWith('['))
         {
@@ -132,6 +146,13 @@ public static class RadioBackupImporter
         => !string.IsNullOrWhiteSpace(url) &&
            Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri) &&
            (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+
+    public static string ComputeStableShortHash(string input)
+    {
+        var normalized = input.Trim().ToLowerInvariant();
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
+        return Convert.ToHexString(hash.AsSpan(0, 4)).ToLowerInvariant();
+    }
 
     private static IReadOnlyList<RadioStation> SanitizeImportedStations(IEnumerable<RadioStation>? stations)
     {

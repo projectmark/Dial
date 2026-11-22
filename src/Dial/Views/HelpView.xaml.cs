@@ -64,7 +64,7 @@ public sealed partial class HelpView : UserControl
         if (!_isSubscribed)
         {
             _changelog.UnreadStateChanged += OnChangelogUnreadChanged;
-            _theme.ThemeChanged += ApplyThemeVisuals;
+            _theme.ThemeChanged += OnThemeChanged;
             _localization.LanguageChanged += OnLanguageChanged;
             _isSubscribed = true;
         }
@@ -85,7 +85,7 @@ public sealed partial class HelpView : UserControl
         if (_isSubscribed)
         {
             _changelog.UnreadStateChanged -= OnChangelogUnreadChanged;
-            _theme.ThemeChanged -= ApplyThemeVisuals;
+            _theme.ThemeChanged -= OnThemeChanged;
             _localization.LanguageChanged -= OnLanguageChanged;
             _isSubscribed = false;
         }
@@ -105,6 +105,8 @@ public sealed partial class HelpView : UserControl
         ChangelogUnreadDot.Visibility = _changelog.HasNewVersion ? Visibility.Visible : Visibility.Collapsed;
         ChangelogUnreadDot.Fill = _theme.GetAdaptiveAccentBrush();
     }
+
+    private void OnThemeChanged() => ApplyThemeVisuals(refreshContent: true);
 
     private void OnLanguageChanged(string _) => RefreshLocalizedUi();
 
@@ -171,7 +173,7 @@ public sealed partial class HelpView : UserControl
         }
         _isUpdatingCombo = false;
 
-        ApplyThemeVisuals();
+        ApplyThemeVisuals(refreshContent: false);
         if (_isChangelogMode)
         {
             BuildChangelogTimeline();
@@ -277,9 +279,12 @@ public sealed partial class HelpView : UserControl
         DetailSummary.Text = _localization[article.SummaryKey];
         DetailBody.Text = _localization[article.BodyKey];
 
-        if (!string.IsNullOrWhiteSpace(article.BadgeText))
+        var badgeText = !string.IsNullOrWhiteSpace(article.BadgeKey)
+            ? _localization[article.BadgeKey]
+            : article.BadgeText;
+        if (!string.IsNullOrWhiteSpace(badgeText))
         {
-            DetailBadgeText.Text = article.BadgeText;
+            DetailBadgeText.Text = badgeText;
             DetailBadgePill.Visibility = Visibility.Visible;
         }
         else
@@ -287,9 +292,12 @@ public sealed partial class HelpView : UserControl
             DetailBadgePill.Visibility = Visibility.Collapsed;
         }
 
-        if (!string.IsNullOrWhiteSpace(article.CopyableReference))
+        var copyRef = !string.IsNullOrWhiteSpace(article.CopyableReferenceKey)
+            ? _localization[article.CopyableReferenceKey]
+            : article.CopyableReference;
+        if (!string.IsNullOrWhiteSpace(copyRef))
         {
-            CopyRefText.Text = article.CopyableReference;
+            CopyRefText.Text = copyRef;
             CopyRefButton.Content = _localization["Help.CopyReference"];
             CopyRefContainer.Visibility = Visibility.Visible;
         }
@@ -445,7 +453,7 @@ public sealed partial class HelpView : UserControl
         }
     }
 
-    private void ApplyThemeVisuals()
+    private void ApplyThemeVisuals(bool refreshContent = true)
     {
         _lastRenderedIsDark = _theme.IsDarkTheme;
         HeaderTitle.Foreground = _theme.GetTextPrimaryBrush();
@@ -473,6 +481,11 @@ public sealed partial class HelpView : UserControl
         _theme.RefreshInteractiveButton(ChangelogModeBtn);
         _theme.RefreshInteractiveButton(CopyRefButton);
         UpdateChangelogUnreadIndicator();
+
+        if (!refreshContent)
+        {
+            return;
+        }
 
         if (_isChangelogMode)
         {
@@ -511,9 +524,16 @@ public sealed partial class HelpView : UserControl
             return;
         }
 
-        var package = new DataPackage();
-        package.SetText(CopyRefText.Text);
-        Clipboard.SetContent(package);
-        CopyRefButton.Content = _localization["Help.Copied"];
+        try
+        {
+            var package = new DataPackage();
+            package.SetText(CopyRefText.Text);
+            Clipboard.SetContent(package);
+            CopyRefButton.Content = _localization["Help.Copied"];
+        }
+        catch
+        {
+            // Ignore transient clipboard lock errors from external applications.
+        }
     }
 }

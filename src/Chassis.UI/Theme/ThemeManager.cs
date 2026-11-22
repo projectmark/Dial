@@ -34,7 +34,7 @@ public sealed class ThemeManager
 
     private sealed class InteractiveButtonState
     {
-        public required Func<bool> IsSelected { get; init; }
+        public required Func<bool> IsSelected { get; set; }
         public bool IsHovered { get; set; }
         public bool IsPressed { get; set; }
     }
@@ -166,9 +166,11 @@ public sealed class ThemeManager
         ArgumentNullException.ThrowIfNull(button);
         ArgumentNullException.ThrowIfNull(isSelectedPredicate);
 
-        if (_buttonStates.TryGetValue(button, out _))
+        if (_buttonStates.TryGetValue(button, out var existingState))
         {
-            _buttonStates.Remove(button);
+            existingState.IsSelected = isSelectedPredicate;
+            ApplyButtonState(button, existingState);
+            return;
         }
 
         var state = new InteractiveButtonState { IsSelected = isSelectedPredicate };

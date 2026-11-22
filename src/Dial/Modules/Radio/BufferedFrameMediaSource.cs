@@ -34,6 +34,7 @@ public sealed class BufferedFrameMediaSource : IDisposable
     private const int ReadChunkSize = 16_384;
     private const int MaxSniffBytes = 65_536;
     private const int MaxTransientReconnects = 4;
+    private static readonly TimeSpan StreamReadTimeout = TimeSpan.FromSeconds(20);
 
     private readonly string _upstreamUrl;
     private readonly HttpClient _http;
@@ -224,7 +225,7 @@ public sealed class BufferedFrameMediaSource : IDisposable
             _accumulator = accumulator;
 
             var initialFrames = new List<AudioFrame>(256);
-            accumulator.Append(sniffBuffer.ToArray());
+            accumulator.Append(CollectionsMarshal.AsSpan(sniffBuffer));
             accumulator.ExtractFrames(initialFrames);
             foreach (var frame in initialFrames)
             {
@@ -318,9 +319,12 @@ public sealed class BufferedFrameMediaSource : IDisposable
                         using (activeResp)
                         await using (var stream = activeStream ?? await activeResp.Content.ReadAsStreamAsync(_cts.Token).ConfigureAwait(false))
                         {
+                            using var readTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
                             while (!_cts.IsCancellationRequested)
                             {
-                                var bytesRead = await stream.ReadAsync(_scratchRead.AsMemory(), _cts.Token).ConfigureAwait(false);
+                                readTimeoutCts.CancelAfter(StreamReadTimeout);
+                                var bytesRead = await stream.ReadAsync(_scratchRead.AsMemory(), readTimeoutCts.Token).ConfigureAwait(false);
+                                readTimeoutCts.CancelAfter(Timeout.InfiniteTimeSpan);
                                 if (bytesRead == 0)
                                 {
                                     break;
@@ -455,6 +459,11 @@ public sealed class BufferedFrameMediaSource : IDisposable
             {
                 if (_timestampSampleRate != frame.SampleRate)
                 {
+                    if (_timestampSampleRate > 0 && _deliveredSamples > 0)
+                    {
+                        _nextTimestamp += TimeSpan.FromTicks(_deliveredSamples * TimeSpan.TicksPerSecond / _timestampSampleRate);
+                    }
+
                     _timestampSampleRate = frame.SampleRate;
                     _deliveredSamples = 0;
                 }

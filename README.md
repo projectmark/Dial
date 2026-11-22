@@ -11,12 +11,12 @@ Een lichtgewicht, modulaire Windows 11 internetradio-desktopapp gebouwd met **Wi
 - **Één schone HTTP-verbinding**: Inline Shoutcast/Icecast ICY-metadata (`icy-metaint`) wordt direct uit de audiostream gescheiden voor live *Now Playing*-titels, zonder een tweede streamverbinding te openen.
 - **Gebruikersbuffer (2s – 30s)**: Stel onder **Instellingen → Radio** zelf in hoeveel seconden vooruit wordt gebufferd (`2s`, `5s` standaard, `10s`, `15s` of `30s`) met live bufferstatus in de speler (`Buffer X,X/Ys`), hysteresis-herstel bij onderbrekingen en automatische herverbinding op een schone frame-grens.
 - **Fallback-ondersteuning**: Niet-MP3/AAC-streams (zoals Ogg, Opus of FLAC) worden via een lokale loopback-bufferproxy (`127.0.0.1`) afgespeeld; HLS/playlist-URL’s (`.m3u8`, `.pls`) vallen direct terug op Windows Media Foundation.
-- **Windows SMTC-integratie**: Bediening en live track-info via Windows mediatoetsen en het vergrendelscherm.
+- **Windows SMTC-integratie & nummer opzoeken**: Bediening en live track-info via Windows mediatoetsen en het vergrendelscherm, plus één-klik nummer opzoeken in **Spotify**, **YouTube Music**, **Deezer** of **Tidal** (instelbaar onder **Instellingen → Radio**).
 
 ### Favorieten, ontdekken & beheren
-- **Radi-oh!-stijl favorietenlijst of 2×2 kaarten**: Instelbare weergave, positienummers (`01.`, `02.`), uitlijning en lettergrootte.
-- **Bewerkmodus met sticky werkbalk**: Eigen zender toevoegen, hernoemen, selectievakjes, `Shift+klik` bereikselectie, bulk verwijderen en multi-select drag-and-drop herordenen terwijl de spelerkaart natuurlijk uit beeld scrolt.
-- **40.000+ wereldwijde zenders ontdekken**: Ingebouwde **Radio Browser**-zoekfunctie met land- en alfabetfilter, direct voorbeluisteren en met één klik toevoegen aan favorieten.
+- **Radi-oh!-stijl favorietenlijst of 2×2 kaarten**: Instelbare weergave, positienummers (`01.`, `02.`), uitlijning en lettergrootte, met studiostijl **ON AIR**-statusbadge bij live streams.
+- **Bewerkmodus met compositor-locked sticky werkbalk**: Eigen zender toevoegen, hernoemen, selectievakjes, `Shift+klik` bereikselectie, bulk verwijderen en multi-select drag-and-drop herordenen terwijl de spelerkaart natuurlijk uit beeld scrolt.
+- **40.000+ wereldwijde zenders ontdekken**: Ingebouwde **Radio Browser**-zoekfunctie met land-, alfabet- en minimum bitratefilter (`64+` t/m `320 kbps`), direct voorbeluisteren en met één klik toevoegen aan favorieten.
 - **Importeren & exporteren**: Ondersteuning voor Radi-oh! JSON-backups (incl. `customName` en sortering, met bevestigingsdialoog vóór het aanvullen), `.chassispack`-bestanden en compacte Brotli deelcodes.
 
 ### Mini-speler, VU-meter & achtergrondgebruik

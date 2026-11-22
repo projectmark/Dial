@@ -42,6 +42,7 @@ public sealed partial class DiscoverView : UserControl
     private int _selectedMinBitrate;
     private char? _selectedAlphaFilter;
     private bool _hasLoadedInitial;
+    private bool _lastSearchFailed;
     private bool _isSubscribed;
     private bool _isUpdatingBitrateCombo;
     private CancellationTokenSource? _searchCts;
@@ -198,6 +199,7 @@ public sealed partial class DiscoverView : UserControl
 
         CountryResetBtn.Content = _localization["Discover.CountryReset"];
         AutomationProperties.SetName(CountryResetBtn, _localization["Discover.CountryReset"]);
+        CountryQuickNlBtn.Content = _localization["Discover.QuickCountryNl"];
         AutomationProperties.SetName(CountryQuickNlBtn, _localization["Discover.QuickCountryNl"]);
 
         _isUpdatingBitrateCombo = true;
@@ -219,6 +221,15 @@ public sealed partial class DiscoverView : UserControl
         var qualityTooltip = _localization["Discover.QualityTooltip"];
         AutomationProperties.SetName(MinBitrateCombo, qualityTooltip);
         ToolTipService.SetToolTip(MinBitrateCombo, qualityTooltip);
+
+        if (_hasLoadedInitial && !LoadingRing.IsActive)
+        {
+            StatusText.Text = _lastSearchFailed
+                ? _localization["Discover.Error"]
+                : _results.Count == 0
+                    ? _localization["Discover.Empty"]
+                    : _localization.GetString("Discover.ResultsCount", _results.Count);
+        }
 
         RefreshResultStates();
     }
@@ -268,6 +279,7 @@ public sealed partial class DiscoverView : UserControl
             }
 
             _results = stations;
+            _lastSearchFailed = false;
             BuildResultsList();
             StatusText.Text = _results.Count == 0
                 ? _localization["Discover.Empty"]
@@ -283,6 +295,7 @@ public sealed partial class DiscoverView : UserControl
             if (!cts.IsCancellationRequested)
             {
                 _results = Array.Empty<RadioStation>();
+                _lastSearchFailed = true;
                 BuildResultsList();
                 StatusText.Text = _localization["Discover.Error"];
                 StatusText.Foreground = _theme.GetCriticalBrush();
@@ -465,13 +478,17 @@ public sealed partial class DiscoverView : UserControl
                                 string.Equals(snap.ActiveStation.StreamUrl, row.Station.StreamUrl, StringComparison.OrdinalIgnoreCase) &&
                                 snap.State is RadioPlaybackState.Playing or RadioPlaybackState.Buffering;
 
+            var previewText = isPlayingThis ? _localization["Radio.Stop"] : _localization["Discover.Preview"];
             row.PreviewIcon.Glyph = isPlayingThis ? "\uE769" : "\uE768";
-            row.PreviewLabel.Text = isPlayingThis ? _localization["Radio.Stop"] : _localization["Discover.Preview"];
+            row.PreviewLabel.Text = previewText;
+            AutomationProperties.SetName(row.PreviewButton, $"{previewText} {row.Station.Name}");
             _theme.RefreshInteractiveButton(row.PreviewButton);
 
             var isFav = _player.IsFavorite(row.Station.StreamUrl);
+            var favText = isFav ? _localization["Discover.AddedFavorite"] : _localization["Discover.AddFavorite"];
             row.FavoriteIcon.Glyph = isFav ? "\uE73E" : "\uE710";
-            row.FavoriteLabel.Text = isFav ? _localization["Discover.AddedFavorite"] : _localization["Discover.AddFavorite"];
+            row.FavoriteLabel.Text = favText;
+            AutomationProperties.SetName(row.FavoriteButton, $"{favText} {row.Station.Name}");
             _theme.RefreshInteractiveButton(row.FavoriteButton);
         }
     }

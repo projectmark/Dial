@@ -53,6 +53,7 @@ public sealed class TrayService : ITrayService
     private Action? _onExit;
     private string _showLabel = "Open";
     private string _exitLabel = "Exit";
+    private IntPtr _ownedIcon;
     private bool _initialized;
     private bool _disposed;
 
@@ -144,6 +145,7 @@ public sealed class TrayService : ITrayService
 
     private void ShowContextMenu(IntPtr hwnd)
     {
+        var customItems = _customItems;
         var menu = CreatePopupMenu();
         if (menu == IntPtr.Zero)
         {
@@ -154,12 +156,12 @@ public sealed class TrayService : ITrayService
         {
             AppendMenuW(menu, MfString, (UIntPtr)CmdShow, _showLabel);
 
-            if (_customItems.Count > 0)
+            if (customItems.Count > 0)
             {
                 AppendMenuW(menu, MfSeparator, UIntPtr.Zero, null);
-                for (var i = 0; i < _customItems.Count; i++)
+                for (var i = 0; i < customItems.Count; i++)
                 {
-                    var item = _customItems[i];
+                    var item = customItems[i];
                     if (item.IsSeparator)
                     {
                         AppendMenuW(menu, MfSeparator, UIntPtr.Zero, null);
@@ -189,9 +191,9 @@ public sealed class TrayService : ITrayService
             else if (selected >= CmdCustomBase)
             {
                 var idx = (int)(selected - CmdCustomBase);
-                if (idx >= 0 && idx < _customItems.Count)
+                if (idx >= 0 && idx < customItems.Count)
                 {
-                    _customItems[idx].Callback();
+                    customItems[idx].Callback();
                 }
             }
         }
@@ -211,7 +213,7 @@ public sealed class TrayService : ITrayService
         szInfoTitle = string.Empty
     };
 
-    private static IntPtr ResolveAppIcon()
+    private IntPtr ResolveAppIcon()
     {
         var exePath = Environment.ProcessPath;
         if (!string.IsNullOrEmpty(exePath))
@@ -220,6 +222,7 @@ public sealed class TrayService : ITrayService
             var icon = ExtractAssociatedIconW(IntPtr.Zero, exePath, ref iconIdx);
             if (icon != IntPtr.Zero)
             {
+                _ownedIcon = icon;
                 return icon;
             }
         }
@@ -247,6 +250,12 @@ public sealed class TrayService : ITrayService
                 var data = CreateNotifyIconData(hwnd);
                 Shell_NotifyIconW(NimDelete, ref data);
             });
+        }
+
+        if (_ownedIcon != IntPtr.Zero && OperatingSystem.IsWindows())
+        {
+            DestroyIcon(_ownedIcon);
+            _ownedIcon = IntPtr.Zero;
         }
 
         _messageHost.RemoveMessageHandler(_handlerId);
@@ -308,4 +317,7 @@ public sealed class TrayService : ITrayService
 
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool DestroyIcon(IntPtr hIcon);
 }

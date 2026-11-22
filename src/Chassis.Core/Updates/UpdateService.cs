@@ -37,6 +37,8 @@ public interface IUpdateService
 /// </summary>
 public sealed class UpdateService : IUpdateService
 {
+    private const int MaxManifestBytes = 1024 * 1024;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -70,10 +72,39 @@ public sealed class UpdateService : IUpdateService
             if (Uri.TryCreate(manifestPathOrUrl, UriKind.Absolute, out var uri) &&
                 (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
             {
-                rawJson = await SharedHttp.GetStringAsync(uri, ct).ConfigureAwait(false);
+                using var response = await SharedHttp.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+                response.EnsureSuccessStatusCode();
+                if (response.Content.Headers.ContentLength is > MaxManifestBytes)
+                {
+                    return new UpdateCheckResult(false, current, null, null, "Update manifest exceeds maximum allowed size.");
+                }
+
+                await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+                using var ms = new MemoryStream();
+                var buffer = new byte[8192];
+                var total = 0;
+                int read;
+                while ((read = await stream.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+                {
+                    total += read;
+                    if (total > MaxManifestBytes)
+                    {
+                        return new UpdateCheckResult(false, current, null, null, "Update manifest exceeds maximum allowed size.");
+                    }
+
+                    ms.Write(buffer, 0, read);
+                }
+
+                rawJson = Encoding.UTF8.GetString(ms.GetBuffer(), 0, (int)ms.Length);
             }
             else if (File.Exists(manifestPathOrUrl))
             {
+                var info = new FileInfo(manifestPathOrUrl);
+                if (info.Length > MaxManifestBytes)
+                {
+                    return new UpdateCheckResult(false, current, null, null, "Update manifest exceeds maximum allowed size.");
+                }
+
                 rawJson = await File.ReadAllTextAsync(manifestPathOrUrl, ct).ConfigureAwait(false);
             }
             else
@@ -143,12 +174,16 @@ public sealed class UpdateService : IUpdateService
             throw new InvalidOperationException("SHA256 verification failed for staged update binary.");
         }
 
+        var safeStagedPath = SanitizeCmdPath(stagedExePath, nameof(stagedExePath));
+        var safeTargetPath = SanitizeCmdPath(targetExePath, nameof(targetExePath));
+
         _paths.EnsureDirectoriesExist();
         var scriptPath = Path.Combine(_paths.PendingUpdatesDirectory, "apply_update.cmd");
         var pid = Environment.ProcessId;
 
         var script = new StringBuilder();
         script.AppendLine("@echo off");
+        script.AppendLine("chcp 65001 >NUL");
         script.AppendLine("setlocal");
         script.AppendLine($"set PID={pid}");
         script.AppendLine(":waitloop");
@@ -157,14 +192,28 @@ public sealed class UpdateService : IUpdateService
         script.AppendLine("    timeout /t 1 /nobreak >NUL");
         script.AppendLine("    goto waitloop");
         script.AppendLine(")");
-        script.AppendLine($"copy /Y \"{stagedExePath}\" \"{targetExePath}\" >NUL");
-        script.AppendLine($"del /F /Q \"{stagedExePath}\" >NUL 2>&1");
-        script.AppendLine($"start \"\" \"{targetExePath}\"");
-        script.AppendLine($"del /F /Q \"%~f0\" >NUL 2>&1");
+        script.AppendLine($"copy /Y \"{EscapeBatchPercent(safeStagedPath)}\" \"{EscapeBatchPercent(safeTargetPath)}\" >NUL");
+        script.AppendLine($"del /F /Q \"{EscapeBatchPercent(safeStagedPath)}\" >NUL 2>&1");
+        script.AppendLine($"start \"\" \"{EscapeBatchPercent(safeTargetPath)}\"");
+        script.AppendLine("del /F /Q \"%~f0\" >NUL 2>&1");
 
-        File.WriteAllText(scriptPath, script.ToString(), Encoding.ASCII);
+        File.WriteAllText(scriptPath, script.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         return scriptPath;
     }
+
+    private static string SanitizeCmdPath(string path, string paramName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path, paramName);
+        if (path.IndexOfAny(['"', '\r', '\n', '\0']) >= 0)
+        {
+            throw new ArgumentException("Update path contains invalid characters.", paramName);
+        }
+
+        return Path.GetFullPath(path);
+    }
+
+    private static string EscapeBatchPercent(string value)
+        => value.Replace("%", "%%", StringComparison.Ordinal);
 
     /// <inheritdoc />
     public bool ApplyUpdateAndRestart(string stagedExePath, string expectedSha256, bool launchDetached = true)

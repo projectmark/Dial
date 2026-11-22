@@ -24,6 +24,8 @@ public interface IRadioBrowserService : IDisposable
 /// </summary>
 public sealed class RadioBrowserService : IRadioBrowserService
 {
+    private const int MaxApiResponseBytes = 4 * 1024 * 1024;
+
     private static readonly string[] Mirrors =
     [
         "https://de1.api.radio-browser.info",
@@ -216,7 +218,7 @@ public sealed class RadioBrowserService : IRadioBrowserService
 
             var uuid = GetString(el, "stationuuid").Trim();
             var id = string.IsNullOrWhiteSpace(uuid)
-                ? $"rb-{Math.Abs(primaryUrl.GetHashCode(StringComparison.OrdinalIgnoreCase)):x8}"
+                ? $"rb-{RadioBackupImporter.ComputeStableShortHash(primaryUrl)}"
                 : $"rb-{uuid}";
 
             var fallbackUrl = !string.IsNullOrWhiteSpace(urlRaw) &&
@@ -301,9 +303,30 @@ public sealed class RadioBrowserService : IRadioBrowserService
         {
             try
             {
-                using var response = await _httpClient.GetAsync($"{mirror}{relativePath}", ct).ConfigureAwait(false);
+                using var response = await _httpClient.GetAsync($"{mirror}{relativePath}", HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
                 response.EnsureSuccessStatusCode();
-                return await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                if (response.Content.Headers.ContentLength is > MaxApiResponseBytes)
+                {
+                    throw new HttpRequestException("Radio Browser API response exceeded maximum size.");
+                }
+
+                await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+                using var ms = new MemoryStream();
+                var buffer = new byte[16_384];
+                var total = 0;
+                int read;
+                while ((read = await stream.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+                {
+                    total += read;
+                    if (total > MaxApiResponseBytes)
+                    {
+                        throw new HttpRequestException("Radio Browser API response exceeded maximum size.");
+                    }
+
+                    ms.Write(buffer, 0, read);
+                }
+
+                return Encoding.UTF8.GetString(ms.GetBuffer(), 0, (int)ms.Length);
             }
             catch (OperationCanceledException)
             {

@@ -6,3 +6,7 @@ obj/
 .gemini/
 *.tmp
 releases/
+temp_publish/
+*.pat
+*.env
+*.secrets.json

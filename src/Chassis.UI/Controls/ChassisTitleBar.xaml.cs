@@ -33,6 +33,7 @@ public sealed partial class ChassisTitleBar : UserControl
     private double _subtitleExpandedWidth;
     private Func<string?>? _nextSubtitleProvider;
     private Storyboard? _subtitleStoryboard;
+    private SolidColorBrush? _transparentBrush;
     private bool _hasLiveStatus;
 
     public ChassisTitleBar()
@@ -49,7 +50,10 @@ public sealed partial class ChassisTitleBar : UserControl
             UpdateResponsiveBadge();
             UpdateDragRectangles();
         };
-        LayoutUpdated += (_, _) => UpdateDragRectangles();
+        DragRegion.SizeChanged += (_, _) => UpdateDragRectangles();
+        LeftCluster.SizeChanged += (_, _) => UpdateDragRectangles();
+        RightCluster.SizeChanged += (_, _) => UpdateDragRectangles();
+        Loaded += (_, _) => UpdateDragRectangles();
         Unloaded += (_, _) =>
         {
             _subtitleHideTimer.Stop();
@@ -476,9 +480,10 @@ public sealed partial class ChassisTitleBar : UserControl
         LiveStatusText.Foreground = _theme.GetTextPrimaryBrush();
         if (LogoImage.Visibility == Visibility.Visible)
         {
+            var transparent = _transparentBrush ??= new SolidColorBrush(Colors.Transparent);
             LogoBadge.BorderThickness = new Thickness(0);
-            LogoBadge.Background = new SolidColorBrush(Colors.Transparent);
-            LogoBadge.BorderBrush = new SolidColorBrush(Colors.Transparent);
+            LogoBadge.Background = transparent;
+            LogoBadge.BorderBrush = transparent;
         }
         else
         {

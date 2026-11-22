@@ -164,7 +164,15 @@ public sealed class RadioPlayerService : IRadioPlayerService
             }
             else
             {
-                var sanitized = stored.Select(SanitizeStation).ToList();
+                var sanitized = stored
+                    .Where(s => s is not null && !string.IsNullOrWhiteSpace(s.Name) && RadioBackupImporter.IsValidHttpStreamUrl(s.StreamUrl))
+                    .Select(SanitizeStation)
+                    .ToList();
+                if (sanitized.Count == 0)
+                {
+                    sanitized = KinkStationCatalog.DefaultStations.ToList();
+                }
+
                 lock (_gate)
                 {
                     _stations = sanitized;
@@ -222,6 +230,12 @@ public sealed class RadioPlayerService : IRadioPlayerService
         ArgumentNullException.ThrowIfNull(station);
 
         var normalized = SanitizeStation(station);
+        if (!RadioBackupImporter.IsValidHttpStreamUrl(normalized.StreamUrl))
+        {
+            HandlePlaybackError(++_playbackGeneration);
+            return Task.CompletedTask;
+        }
+
         long generation;
         bool isAlreadyFavorite;
 
@@ -412,6 +426,11 @@ public sealed class RadioPlayerService : IRadioPlayerService
         ArgumentNullException.ThrowIfNull(station);
 
         var normalized = SanitizeStation(station);
+        if (!RadioBackupImporter.IsValidHttpStreamUrl(normalized.StreamUrl))
+        {
+            return;
+        }
+
         List<RadioStation> snapshot;
         bool activePromoted = false;
 
@@ -457,6 +476,11 @@ public sealed class RadioPlayerService : IRadioPlayerService
         ArgumentNullException.ThrowIfNull(station);
 
         var normalized = SanitizeStation(station);
+        if (!RadioBackupImporter.IsValidHttpStreamUrl(normalized.StreamUrl))
+        {
+            return;
+        }
+
         List<RadioStation> snapshot;
         bool activeUpdated = false;
 
@@ -609,7 +633,7 @@ public sealed class RadioPlayerService : IRadioPlayerService
         ArgumentNullException.ThrowIfNull(stations);
 
         var incoming = stations
-            .Where(s => s is not null && !string.IsNullOrWhiteSpace(s.Name) && !string.IsNullOrWhiteSpace(s.StreamUrl))
+            .Where(s => s is not null && !string.IsNullOrWhiteSpace(s.Name) && RadioBackupImporter.IsValidHttpStreamUrl(s.StreamUrl))
             .Select(SanitizeStation)
             .ToList();
 
@@ -709,7 +733,22 @@ public sealed class RadioPlayerService : IRadioPlayerService
         }
 
         _icyReader.Stop();
+        try
+        {
+            _mediaPlayer.Pause();
+            _mediaPlayer.Source = null;
+        }
+        catch
+        {
+            // Ignore player teardown races before disposing old MediaSource.
+        }
         DisposeCurrentSource();
+
+        if (!RadioBackupImporter.IsValidHttpStreamUrl(streamUrl))
+        {
+            HandlePlaybackError(expectedGeneration);
+            return;
+        }
 
         if (!AudioBufferSizing.ShouldBypassProxy(streamUrl))
         {
@@ -1028,6 +1067,11 @@ public sealed class RadioPlayerService : IRadioPlayerService
         long gen;
         lock (_gate)
         {
+            if (_disposed || _state is RadioPlaybackState.Stopped or RadioPlaybackState.Error)
+            {
+                return;
+            }
+
             gen = _playbackGeneration;
         }
 
@@ -1039,14 +1083,14 @@ public sealed class RadioPlayerService : IRadioPlayerService
         string? fallbackUrl = null;
         lock (_gate)
         {
-            if (generation != _playbackGeneration || _disposed)
+            if (generation != _playbackGeneration || _disposed || _state == RadioPlaybackState.Stopped)
             {
                 return;
             }
 
             if (!_usingFallback &&
                 _activeStation is not null &&
-                !string.IsNullOrWhiteSpace(_activeStation.FallbackStreamUrl))
+                RadioBackupImporter.IsValidHttpStreamUrl(_activeStation.FallbackStreamUrl))
             {
                 _usingFallback = true;
                 _state = RadioPlaybackState.Buffering;
@@ -1067,6 +1111,15 @@ public sealed class RadioPlayerService : IRadioPlayerService
         }
 
         _icyReader.Stop();
+        try
+        {
+            _mediaPlayer.Pause();
+            _mediaPlayer.Source = null;
+        }
+        catch
+        {
+            // Ignore player teardown races before disposing old MediaSource.
+        }
         DisposeCurrentSource();
         UpdateSmtcDisplay();
         NotifyStateChanged();
@@ -1206,7 +1259,9 @@ public sealed class RadioPlayerService : IRadioPlayerService
             Name = station.Name.Trim(),
             Tagline = station.Tagline ?? string.Empty,
             StreamUrl = station.StreamUrl.Trim(),
-            FallbackStreamUrl = station.FallbackStreamUrl ?? string.Empty,
+            FallbackStreamUrl = RadioBackupImporter.IsValidHttpStreamUrl(station.FallbackStreamUrl)
+                ? station.FallbackStreamUrl.Trim()
+                : string.Empty,
             IconGlyph = string.IsNullOrWhiteSpace(station.IconGlyph) ? "\uE7F6" : station.IconGlyph,
             AccentHex = string.IsNullOrWhiteSpace(station.AccentHex) ? "#0078D4" : station.AccentHex,
             CountryCode = string.IsNullOrWhiteSpace(station.CountryCode) ? "INT" : station.CountryCode.Trim().ToUpperInvariant(),

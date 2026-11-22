@@ -30,6 +30,8 @@ public sealed partial class MiniPlayerView : UserControl
     private bool? _lastRenderedMuted;
     private float _smoothedLeft;
     private float _smoothedRight;
+    private SolidColorBrush? _darkVuTrackBrush;
+    private SolidColorBrush? _lightVuTrackBrush;
 
     public MiniPlayerView()
     {
@@ -207,9 +209,9 @@ public sealed partial class MiniPlayerView : UserControl
         MiniCard.Background = _theme.GetCardBackgroundBrush();
         MiniCard.BorderBrush = _theme.GetCardBorderBrush();
 
-        var vuTrackBrush = new SolidColorBrush(_theme.IsDarkTheme
-            ? Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF)
-            : Color.FromArgb(0x16, 0x00, 0x00, 0x00));
+        var vuTrackBrush = _theme.IsDarkTheme
+            ? (_darkVuTrackBrush ??= new SolidColorBrush(Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF)))
+            : (_lightVuTrackBrush ??= new SolidColorBrush(Color.FromArgb(0x16, 0x00, 0x00, 0x00)));
         LeftVuTrack.Background = vuTrackBrush;
         RightVuTrack.Background = vuTrackBrush;
         LeftVuFill.Background = accent;

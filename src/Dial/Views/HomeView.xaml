@@ -314,7 +314,8 @@
                                                     <TextBox
                                                         x:Name="SleepCustomBox"
                                                         Grid.Column="0"
-                                                        InputScope="Number" />
+                                                        InputScope="Number"
+                                                        KeyDown="SleepCustomBox_KeyDown" />
                                                     <Button
                                                         x:Name="SleepCustomStartBtn"
                                                         Grid.Column="1"

@@ -10,7 +10,9 @@ public sealed record KnowledgeArticle(
     string BodyKey,
     string? BadgeText = null,
     string? CopyableReference = null,
-    int Order = 0);
+    int Order = 0,
+    string? BadgeKey = null,
+    string? CopyableReferenceKey = null);
 
 /// <summary>
 /// Registry and localized search engine for built-in Help and Knowledge Base documentation articles.
@@ -87,7 +89,11 @@ public sealed class KnowledgeBaseService : IKnowledgeBaseService
                 return localization[article.TitleKey].Contains(q, StringComparison.OrdinalIgnoreCase) ||
                        localization[article.SummaryKey].Contains(q, StringComparison.OrdinalIgnoreCase) ||
                        localization[article.BodyKey].Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                       (article.CopyableReference?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false);
+                       (article.CopyableReference?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                       (!string.IsNullOrWhiteSpace(article.CopyableReferenceKey) &&
+                        localization[article.CopyableReferenceKey].Contains(q, StringComparison.OrdinalIgnoreCase)) ||
+                       (!string.IsNullOrWhiteSpace(article.BadgeKey) &&
+                        localization[article.BadgeKey].Contains(q, StringComparison.OrdinalIgnoreCase));
             })
             .ToList();
     }

@@ -174,15 +174,18 @@ public sealed class IcyMetadataReader : IIcyMetadataReader
         await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
         var skipBuffer = new byte[Math.Min(metaInterval, 16384)];
         var lenBuffer = new byte[1];
+        var metaBuffer = new byte[4080];
+        using var readTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
         while (!ct.IsCancellationRequested)
         {
-            if (!await SkipExactAsync(stream, metaInterval, skipBuffer, ct).ConfigureAwait(false))
+            readTimeoutCts.CancelAfter(TimeSpan.FromSeconds(30));
+            if (!await SkipExactAsync(stream, metaInterval, skipBuffer, readTimeoutCts.Token).ConfigureAwait(false))
             {
                 break;
             }
 
-            if (!await ReadExactAsync(stream, lenBuffer, 1, ct).ConfigureAwait(false))
+            if (!await ReadExactAsync(stream, lenBuffer, 1, readTimeoutCts.Token).ConfigureAwait(false))
             {
                 break;
             }
@@ -190,16 +193,17 @@ public sealed class IcyMetadataReader : IIcyMetadataReader
             var metaLength = lenBuffer[0] * 16;
             if (metaLength == 0)
             {
+                readTimeoutCts.CancelAfter(Timeout.InfiniteTimeSpan);
                 continue;
             }
 
-            var metaBuffer = new byte[metaLength];
-            if (!await ReadExactAsync(stream, metaBuffer, metaLength, ct).ConfigureAwait(false))
+            if (!await ReadExactAsync(stream, metaBuffer, metaLength, readTimeoutCts.Token).ConfigureAwait(false))
             {
                 break;
             }
+            readTimeoutCts.CancelAfter(Timeout.InfiniteTimeSpan);
 
-            var raw = Encoding.UTF8.GetString(metaBuffer).TrimEnd('\0', ' ');
+            var raw = Encoding.UTF8.GetString(metaBuffer, 0, metaLength).TrimEnd('\0', ' ');
             var title = ParseStreamTitle(raw);
 
             var shouldNotify = false;

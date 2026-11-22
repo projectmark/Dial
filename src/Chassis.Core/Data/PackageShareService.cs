@@ -142,7 +142,23 @@ public sealed class PackageShareService<T> : IPackageShareService<T>
             throw new InvalidDataException("Share code payload is empty.");
         }
 
-        var compressed = FromBase64Url(payloadPart);
+        // Guard before decoding Base64 so oversized strings cannot trigger large upfront allocations.
+        const int maxEncodedChars = ((MaxPackagePayloadBytes + 2) / 3) * 4 + 4;
+        if (payloadPart.Length > maxEncodedChars)
+        {
+            throw new InvalidDataException("Share code exceeds maximum allowed size.");
+        }
+
+        byte[] compressed;
+        try
+        {
+            compressed = FromBase64Url(payloadPart);
+        }
+        catch (FormatException ex)
+        {
+            throw new InvalidDataException("Share code payload contains invalid Base64 characters.", ex);
+        }
+
         if (compressed.Length > MaxPackagePayloadBytes)
         {
             throw new InvalidDataException("Share code exceeds maximum allowed size.");
@@ -165,10 +181,21 @@ public sealed class PackageShareService<T> : IPackageShareService<T>
             output.Write(buffer, 0, read);
         }
 
-        var envelope = JsonSerializer.Deserialize<SharePackage<T>>(output.ToArray(), CompactJsonOptions)
-            ?? throw new InvalidDataException("Share code could not be deserialized.");
+        var jsonSpan = output.TryGetBuffer(out var seg)
+            ? seg.AsSpan()
+            : output.ToArray().AsSpan();
 
-        if (!string.Equals(envelope.Format, PackageFormat, StringComparison.OrdinalIgnoreCase) || envelope.Payload is null)
+        SharePackage<T>? envelope;
+        try
+        {
+            envelope = JsonSerializer.Deserialize<SharePackage<T>>(jsonSpan, CompactJsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidDataException("Share code could not be deserialized.", ex);
+        }
+
+        if (envelope is null || !string.Equals(envelope.Format, PackageFormat, StringComparison.OrdinalIgnoreCase) || envelope.Payload is null)
         {
             throw new InvalidDataException("Share code payload format is invalid.");
         }

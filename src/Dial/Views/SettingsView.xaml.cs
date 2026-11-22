@@ -51,7 +51,7 @@ public sealed partial class SettingsView : UserControl
 
         InitializeCategoriesOnce();
         InitializeLanguageComboOnce();
-        SyncControlsFromSettings();
+        SyncControlsFromSettings(rebuildSwatches: false);
 
         SizeChanged += OnSettingsSizeChanged;
         Loaded += OnLoaded;
@@ -71,7 +71,7 @@ public sealed partial class SettingsView : UserControl
             _isSubscribed = true;
         }
 
-        SyncControlsFromSettings();
+        SyncControlsFromSettings(rebuildSwatches: false);
         ApplyLocalization();
         ApplyThemeVisuals();
     }
@@ -170,7 +170,7 @@ public sealed partial class SettingsView : UserControl
         _isUpdating = false;
     }
 
-    private void SyncControlsFromSettings()
+    private void SyncControlsFromSettings(bool rebuildSwatches = true)
     {
         _isUpdating = true;
         ThemeCombo.SelectedIndex = _settings.Current.Theme switch
@@ -186,7 +186,10 @@ public sealed partial class SettingsView : UserControl
         TrayNotificationsToggle.IsOn = _settings.Current.ShowTrayNotifications;
         _isUpdating = false;
 
-        BuildAccentSwatches();
+        if (rebuildSwatches)
+        {
+            BuildAccentSwatches();
+        }
     }
 
     private void BuildAccentSwatches()
@@ -353,7 +356,10 @@ public sealed partial class SettingsView : UserControl
         _isUpdating = false;
 
         _theme.RefreshFromSettings();
-        BuildAccentSwatches();
+        if (!_isSubscribed)
+        {
+            BuildAccentSwatches();
+        }
     }
 
     private void ApplyLocalization()
@@ -555,7 +561,10 @@ public sealed partial class SettingsView : UserControl
 
         _settings.Update(s => s.UseSystemAccentColor = SystemAccentToggle.IsOn);
         _theme.RefreshFromSettings();
-        BuildAccentSwatches();
+        if (!_isSubscribed)
+        {
+            BuildAccentSwatches();
+        }
     }
 
     private void CloseToTrayToggle_Toggled(object sender, RoutedEventArgs e)

@@ -105,11 +105,13 @@ public sealed class CoreServiceTests : IDisposable
             ["Cat.Core"] = "Core",
             ["Art.Title"] = "Zero Hardcoding",
             ["Art.Summary"] = "Dynamic identity",
-            ["Art.Body"] = "Resolved at runtime"
+            ["Art.Body"] = "Resolved at runtime",
+            ["Art.Ref"] = "Settings -> Core"
         });
         loc.RegisterResources("nl-NL", new Dictionary<string, string>
         {
-            ["Greeting"] = "Hallo {0}"
+            ["Greeting"] = "Hallo {0}",
+            ["Art.Badge"] = "NL BadgeToken"
         });
 
         loc.SetLanguage("nl-NL");
@@ -118,7 +120,10 @@ public sealed class CoreServiceTests : IDisposable
 
         var kb = new KnowledgeBaseService();
         kb.RegisterArticle(new KnowledgeArticle("a1", "Cat.Core", "Art.Title", "Art.Summary", "Art.Body", "v0.1.0", "AppVersion"));
-        Assert.Single(kb.Search("Hardcoding", "Cat.Core", loc));
+        kb.RegisterArticle(new KnowledgeArticle("a2", "Cat.Core", "Art.Title", "Art.Summary", "Art.Body", Order: 2, BadgeKey: "Art.Badge", CopyableReferenceKey: "Art.Ref"));
+        Assert.Equal(2, kb.Search("Hardcoding", "Cat.Core", loc).Count);
+        Assert.Single(kb.Search("BadgeToken", "Cat.Core", loc));
+        Assert.Single(kb.Search("Settings -> Core", "Cat.Core", loc));
         Assert.Empty(kb.Search("MissingTerm", "All", loc));
 
         var changelog = new ChangelogService(settings);

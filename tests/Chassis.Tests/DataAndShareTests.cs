@@ -66,5 +66,7 @@ public sealed class DataAndShareTests : IDisposable
         Assert.Equal(sample, imported);
 
         Assert.Throws<InvalidDataException>(() => share.ImportFromShareCode("invalid-format"));
+        Assert.Throws<InvalidDataException>(() => share.ImportFromShareCode("CHASSISTESTS-v1:!!!not-base64!!!"));
+        Assert.Throws<InvalidDataException>(() => share.ImportFromShareCode("CHASSISTESTS-v1:" + new string('A', 12_000_000)));
     }
 }

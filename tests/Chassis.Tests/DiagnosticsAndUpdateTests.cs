@@ -81,7 +81,9 @@ public sealed class DiagnosticsAndUpdateTests : IDisposable
         Assert.Equal("99.0.0", check.LatestVersion);
 
         var stagedExe = Path.Combine(_tempRoot, "new.exe");
-        var targetExe = Path.Combine(_tempRoot, "current.exe");
+        var unicodeDir = Path.Combine(_tempRoot, "Café_Üser");
+        Directory.CreateDirectory(unicodeDir);
+        var targetExe = Path.Combine(unicodeDir, "current.exe");
         await File.WriteAllBytesAsync(stagedExe, [1, 2, 3, 4]);
         var validSha = Convert.ToHexString(SHA256.HashData([1, 2, 3, 4]));
 
@@ -91,7 +93,10 @@ public sealed class DiagnosticsAndUpdateTests : IDisposable
         var cmdPath = updates.StageUpdateScript(stagedExe, targetExe, validSha);
         Assert.True(File.Exists(cmdPath));
         var scriptText = await File.ReadAllTextAsync(cmdPath);
+        Assert.Contains("chcp 65001", scriptText);
         Assert.Contains(Environment.ProcessId.ToString(), scriptText);
         Assert.Contains(targetExe, scriptText);
+
+        Assert.Throws<ArgumentException>(() => updates.StageUpdateScript(stagedExe, "C:\\bad\"path\\app.exe", validSha));
     }
 }

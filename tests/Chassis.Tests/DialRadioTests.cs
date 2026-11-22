@@ -597,11 +597,25 @@ public sealed class DialRadioTests : IDisposable
         Assert.True(File.Exists(nlPath), $"Missing {nlPath}");
         Assert.True(File.Exists(enPath), $"Missing {enPath}");
 
-        var nlKeys = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(nlPath))!.Keys.ToHashSet(StringComparer.Ordinal);
-        var enKeys = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(enPath))!.Keys.ToHashSet(StringComparer.Ordinal);
+        var nlMap = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(nlPath))!;
+        var enMap = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(enPath))!;
+        var nlKeys = nlMap.Keys.ToHashSet(StringComparer.Ordinal);
+        var enKeys = enMap.Keys.ToHashSet(StringComparer.Ordinal);
 
         Assert.Empty(nlKeys.Except(enKeys));
         Assert.Empty(enKeys.Except(nlKeys));
+        Assert.All(nlMap, kv => Assert.False(string.IsNullOrWhiteSpace(kv.Value), $"Empty nl-NL value for '{kv.Key}'"));
+        Assert.All(enMap, kv => Assert.False(string.IsNullOrWhiteSpace(kv.Value), $"Empty en-US value for '{kv.Key}'"));
+
+        // Verify all KB.* and Changelog.* keys registered in App.xaml.cs exist in both locales
+        var appXamlCsPath = Path.Combine(repoRoot, "src", "Dial", "App.xaml.cs");
+        var appCode = File.ReadAllText(appXamlCsPath);
+        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(appCode, "\"((?:KB|Changelog)\\.[A-Za-z0-9_.]+)\""))
+        {
+            var key = m.Groups[1].Value;
+            Assert.Contains(key, nlKeys);
+            Assert.Contains(key, enKeys);
+        }
     }
 
     [Fact]
@@ -814,6 +828,13 @@ public sealed class DialRadioTests : IDisposable
         queue.Complete();
         Assert.Equal(0, queue.FrameCount);
         Assert.Equal(TimeSpan.Zero, queue.BufferedDuration);
+
+        // Deterministic short hash and oversized payload rejection
+        var h1 = RadioBackupImporter.ComputeStableShortHash("https://Stream.Example.Invalid/Live.mp3");
+        var h2 = RadioBackupImporter.ComputeStableShortHash("  https://stream.example.invalid/live.mp3 ");
+        Assert.Equal(8, h1.Length);
+        Assert.Equal(h1, h2);
+        Assert.Throws<InvalidDataException>(() => RadioBackupImporter.ParseRadiOhBackupJson(new string('[', 9_000_000)));
     }
 
     private sealed class StubJsonHandler(Func<HttpRequestMessage, string> responder) : HttpMessageHandler

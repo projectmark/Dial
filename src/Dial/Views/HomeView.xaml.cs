@@ -76,7 +76,7 @@ public sealed partial class HomeView : UserControl
     private readonly ThemeManager _theme;
     private readonly List<StationRowVisual> _stationVisuals = [];
     private readonly List<EditRowVisual> _editRowVisuals = [];
-    private readonly List<Button> _sleepPresetButtons = [];
+    private readonly List<(int Minutes, Button Button)> _sleepPresetButtons = [];
     private readonly HashSet<string> _selectedStationIds = new(StringComparer.OrdinalIgnoreCase);
 
     private List<string> _draggedStationIds = [];
@@ -102,6 +102,8 @@ public sealed partial class HomeView : UserControl
     private OnAirStudioPalette? _lightOnAirPalette;
     private OnAirStudioPalette? _darkOnAirPalette;
     private SolidColorBrush? _transparentBrush;
+    private SolidColorBrush? _lightEditToolbarBrush;
+    private SolidColorBrush? _darkEditToolbarBrush;
 
     public HomeView()
     {
@@ -160,12 +162,15 @@ public sealed partial class HomeView : UserControl
             _isSubscribed = true;
         }
 
-        if (ReadListLayoutSignature() != _lastListLayoutSignature || StationsDifferFromRendered())
+        var cultureChanged = !string.Equals(_lastRenderedCulture, _localization.CurrentCulture, StringComparison.Ordinal);
+        if (ReadListLayoutSignature() != _lastListLayoutSignature ||
+            StationsDifferFromRendered() ||
+            (cultureChanged && _isEditMode))
         {
             RebuildStationsUi();
         }
 
-        if (!string.Equals(_lastRenderedCulture, _localization.CurrentCulture, StringComparison.Ordinal))
+        if (cultureChanged)
         {
             ApplyLocalization();
         }
@@ -304,6 +309,11 @@ public sealed partial class HomeView : UserControl
         RenderState(_player.Current);
     }
 
+    private string FormatSleepPresetLabel(int minutes)
+        => minutes >= 60
+            ? _localization.GetString("Radio.Sleep.PresetHours", minutes / 60)
+            : _localization.GetString("Radio.Sleep.PresetMinutes", minutes);
+
     private void BuildSleepPresets()
     {
         SleepPresetsGrid.Children.Clear();
@@ -312,7 +322,7 @@ public sealed partial class HomeView : UserControl
         for (var i = 0; i < SleepPresetMinutes.Length; i++)
         {
             var minutes = SleepPresetMinutes[i];
-            var label = minutes >= 60 ? $"{minutes / 60}u" : $"{minutes} min";
+            var label = FormatSleepPresetLabel(minutes);
             var btn = new Button
             {
                 HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -332,7 +342,7 @@ public sealed partial class HomeView : UserControl
             Grid.SetRow(btn, i / 2);
             Grid.SetColumn(btn, i % 2);
             SleepPresetsGrid.Children.Add(btn);
-            _sleepPresetButtons.Add(btn);
+            _sleepPresetButtons.Add((minutes, btn));
         }
     }
 
@@ -461,7 +471,7 @@ public sealed partial class HomeView : UserControl
 
                 var titleTapTarget = new Grid
                 {
-                    Background = new SolidColorBrush(Colors.Transparent),
+                    Background = _transparentBrush ??= new SolidColorBrush(Colors.Transparent),
                     VerticalAlignment = VerticalAlignment.Stretch,
                     HorizontalAlignment = HorizontalAlignment.Stretch
                 };
@@ -1019,6 +1029,13 @@ public sealed partial class HomeView : UserControl
         SleepCustomBox.PlaceholderText = _localization["Radio.Sleep.CustomPlaceholder"];
         SleepCustomStartBtn.Content = _localization["Radio.Sleep.StartCustom"];
         SleepFlyoutCancelBtn.Content = _localization["Radio.Sleep.Cancel"];
+        foreach (var (minutes, btn) in _sleepPresetButtons)
+        {
+            var presetLabel = FormatSleepPresetLabel(minutes);
+            btn.Content = presetLabel;
+            AutomationProperties.SetName(btn, presetLabel);
+        }
+
         StatsFlyoutHeading.Text = _localization["Radio.Stats.Heading"];
 
         AutomationProperties.SetName(PrevStationBtn, _localization["Radio.Previous"]);
@@ -1059,9 +1076,9 @@ public sealed partial class HomeView : UserControl
 
         HeroCard.Background = _theme.GetCardBackgroundBrush();
         HeroCard.BorderBrush = _theme.GetCardBorderBrush();
-        EditToolbar.Background = new SolidColorBrush(_theme.IsDarkTheme
-            ? Color.FromArgb(0xF2, 0x24, 0x24, 0x24)
-            : Color.FromArgb(0xF5, 0xF7, 0xF8, 0xFA));
+        EditToolbar.Background = _theme.IsDarkTheme
+            ? (_darkEditToolbarBrush ??= new SolidColorBrush(Color.FromArgb(0xF2, 0x24, 0x24, 0x24)))
+            : (_lightEditToolbarBrush ??= new SolidColorBrush(Color.FromArgb(0xF5, 0xF7, 0xF8, 0xFA)));
         EditToolbar.BorderBrush = _theme.GetCardBorderBrush();
         StickyToolbarOverlay.Visibility = _isEditMode ? Visibility.Visible : Visibility.Collapsed;
         EditToolbar.Visibility = _isEditMode ? Visibility.Visible : Visibility.Collapsed;
@@ -1173,7 +1190,7 @@ public sealed partial class HomeView : UserControl
         _theme.RefreshInteractiveButton(SleepCustomStartBtn);
         _theme.RefreshInteractiveButton(SleepFlyoutCancelBtn);
 
-        foreach (var presetBtn in _sleepPresetButtons)
+        foreach (var (_, presetBtn) in _sleepPresetButtons)
         {
             _theme.RefreshInteractiveButton(presetBtn);
         }
@@ -1189,7 +1206,7 @@ public sealed partial class HomeView : UserControl
                 _theme.RefreshInteractiveButton(item.CardButton);
             }
 
-            item.AccentPill.Background = isSelected ? accent : new SolidColorBrush(Colors.Transparent);
+            item.AccentPill.Background = isSelected ? accent : transparent;
             item.TitleText.Foreground = isSelected ? accent : primary;
 
             if (item.IconBox is not null && item.IconGlyph is not null)
@@ -1985,12 +2002,19 @@ public sealed partial class HomeView : UserControl
 
     private void ExportCodeMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        var list = _player.Stations.ToList();
-        var code = _shareService.ExportToShareCode(list);
-        var package = new DataPackage();
-        package.SetText(code);
-        Clipboard.SetContent(package);
-        ShowEditFeedback(_localization.GetString("Radio.Share.CopiedCode", list.Count));
+        try
+        {
+            var list = _player.Stations.ToList();
+            var code = _shareService.ExportToShareCode(list);
+            var package = new DataPackage();
+            package.SetText(code);
+            Clipboard.SetContent(package);
+            ShowEditFeedback(_localization.GetString("Radio.Share.CopiedCode", list.Count));
+        }
+        catch
+        {
+            ShowEditFeedback(_localization["Radio.Share.InvalidInput"], isError: true);
+        }
     }
 
     private async void ExportFileMenuItem_Click(object sender, RoutedEventArgs e)
@@ -2008,8 +2032,15 @@ public sealed partial class HomeView : UserControl
         var file = await picker.PickSaveFileAsync();
         if (file is null) return;
 
-        await _shareService.ExportToFileAsync(_player.Stations.ToList(), file.Path);
-        ShowEditFeedback(_localization["Radio.Share.ExportedFile"]);
+        try
+        {
+            await _shareService.ExportToFileAsync(_player.Stations.ToList(), file.Path);
+            ShowEditFeedback(_localization["Radio.Share.ExportedFile"]);
+        }
+        catch
+        {
+            ShowEditFeedback(_localization["Radio.Share.InvalidInput"], isError: true);
+        }
     }
 
     private async void ImportCodeMenuItem_Click(object sender, RoutedEventArgs e)
@@ -2077,6 +2108,13 @@ public sealed partial class HomeView : UserControl
 
         try
         {
+            var info = new FileInfo(file.Path);
+            if (info.Length > RadioBackupImporter.MaxImportPayloadBytes)
+            {
+                ShowEditFeedback(_localization["Radio.Share.InvalidInput"], isError: true);
+                return;
+            }
+
             var rawText = await File.ReadAllTextAsync(file.Path);
             var imported = RadioBackupImporter.ParseAny(rawText, _shareService);
             await ConfirmAndAppendImportedStationsAsync(imported);
@@ -2160,12 +2198,21 @@ public sealed partial class HomeView : UserControl
     {
         SleepFlyoutHeading.Foreground = _theme.GetTextPrimaryBrush();
         SleepFlyoutCancelBtn.Visibility = _sleepTimer.IsActive ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var btn in _sleepPresetButtons)
+        foreach (var (_, btn) in _sleepPresetButtons)
         {
             _theme.RefreshInteractiveButton(btn);
         }
         _theme.RefreshInteractiveButton(SleepCustomStartBtn);
         _theme.RefreshInteractiveButton(SleepFlyoutCancelBtn);
+    }
+
+    private void SleepCustomBox_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == VirtualKey.Enter)
+        {
+            e.Handled = true;
+            SleepCustomStartBtn_Click(sender, e);
+        }
     }
 
     private void SleepCustomStartBtn_Click(object sender, RoutedEventArgs e)

@@ -206,9 +206,9 @@ public sealed partial class App : Application
             TitleKey: "KB.Article.Stations.Title",
             SummaryKey: "KB.Article.Stations.Summary",
             BodyKey: "KB.Article.Stations.Body",
-            BadgeText: "40.000+ Zenders",
             CopyableReference: "https://api.radio-browser.info",
-            Order: 1));
+            Order: 1,
+            BadgeKey: "KB.Article.Stations.Badge"));
 
         kb.RegisterArticle(new KnowledgeArticle(
             Id: "dial-streaming-buffer",
@@ -216,9 +216,9 @@ public sealed partial class App : Application
             TitleKey: "KB.Article.StreamBuffer.Title",
             SummaryKey: "KB.Article.StreamBuffer.Summary",
             BodyKey: "KB.Article.StreamBuffer.Body",
-            BadgeText: "2s–30s Buffer",
-            CopyableReference: "Instellingen → Radio",
-            Order: 2));
+            Order: 2,
+            BadgeKey: "KB.Article.StreamBuffer.Badge",
+            CopyableReferenceKey: "KB.Article.StreamBuffer.Ref"));
 
         kb.RegisterArticle(new KnowledgeArticle(
             Id: "dial-timer-mini",
@@ -226,9 +226,9 @@ public sealed partial class App : Application
             TitleKey: "KB.Article.TimerMini.Title",
             SummaryKey: "KB.Article.TimerMini.Summary",
             BodyKey: "KB.Article.TimerMini.Body",
-            BadgeText: "Ctrl+M • Timer",
             CopyableReference: "Ctrl+M",
-            Order: 3));
+            Order: 3,
+            BadgeKey: "KB.Article.TimerMini.Badge"));
 
         kb.RegisterArticle(new KnowledgeArticle(
             Id: "dial-hotkeys",
@@ -236,9 +236,9 @@ public sealed partial class App : Application
             TitleKey: "KB.Article.Hotkeys.Title",
             SummaryKey: "KB.Article.Hotkeys.Summary",
             BodyKey: "KB.Article.Hotkeys.Body",
-            BadgeText: "Sneltoetsen",
             CopyableReference: $"{RadioHotkeyDefaults.PlayPause} / {RadioHotkeyDefaults.Next} / {RadioHotkeyDefaults.Prev} / {RadioHotkeyDefaults.Mute} • {RadioHotkeyDefaults.ToggleWindow}",
-            Order: 4));
+            Order: 4,
+            BadgeKey: "KB.Article.Hotkeys.Badge"));
 
         kb.RegisterArticle(new KnowledgeArticle(
             Id: "tray-background",
@@ -246,9 +246,9 @@ public sealed partial class App : Application
             TitleKey: "KB.Article.Tray.Title",
             SummaryKey: "KB.Article.Tray.Summary",
             BodyKey: "KB.Article.Tray.Body",
-            BadgeText: "Systeemvak",
-            CopyableReference: "Instellingen → Systeemvak & Achtergrond",
-            Order: 5));
+            Order: 5,
+            BadgeKey: "KB.Article.Tray.Badge",
+            CopyableReferenceKey: "KB.Article.Tray.Ref"));
 
         kb.RegisterArticle(new KnowledgeArticle(
             Id: "appdata-storage",
@@ -267,6 +267,7 @@ public sealed partial class App : Application
             Changes: new ChangelogChange[]
             {
                 new ChangelogChange("Added", "Changelog.v011Alpha.AddedTitleBarCatchphraseAndLive"),
+                new ChangelogChange("Added", "Changelog.v011Alpha.AddedOnAirBadge"),
                 new ChangelogChange("Added", "Changelog.v011Alpha.AddedTrackLookup"),
                 new ChangelogChange("Added", "Changelog.v011Alpha.AddedDiscoverMinBitrate"),
                 new ChangelogChange("Changed", "Changelog.v011Alpha.ChangedPerformanceAndVolume"),

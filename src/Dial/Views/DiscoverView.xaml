@@ -99,7 +99,6 @@
                                             HorizontalAlignment="Stretch"
                                             Height="32"
                                             CornerRadius="6"
-                                            Content="Nederland (NL)"
                                             Click="CountryQuickNlBtn_Click" />
                                         <Button
                                             x:Name="CountryResetBtn"

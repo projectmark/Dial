@@ -425,6 +425,7 @@ public sealed class BufferedStreamProxy : IDisposable
 {
     private const int ChunkSize = 16_384;
     private const int MaxTransientReconnects = 3;
+    private static readonly TimeSpan StreamReadTimeout = TimeSpan.FromSeconds(20);
 
     /// <summary>
     /// Shared pooled HTTP client for live audio streams to preserve DNS/TLS reuse and avoid socket exhaustion.
@@ -640,9 +641,12 @@ public sealed class BufferedStreamProxy : IDisposable
                         using (activeResponse)
                         await using (var stream = preOpenedStream ?? await activeResponse.Content.ReadAsStreamAsync(_cts.Token).ConfigureAwait(false))
                         {
+                            using var readTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
                             while (!_cts.IsCancellationRequested)
                             {
-                                var bytesRead = await stream.ReadAsync(readBuffer.AsMemory(), _cts.Token).ConfigureAwait(false);
+                                readTimeoutCts.CancelAfter(StreamReadTimeout);
+                                var bytesRead = await stream.ReadAsync(readBuffer.AsMemory(), readTimeoutCts.Token).ConfigureAwait(false);
+                                readTimeoutCts.CancelAfter(Timeout.InfiniteTimeSpan);
                                 if (bytesRead == 0)
                                 {
                                     break;
@@ -951,5 +955,6 @@ public sealed class BufferedStreamProxy : IDisposable
         }
 
         try { _listener?.Stop(); } catch { }
+        try { _listener?.Dispose(); } catch { }
     }
 }
