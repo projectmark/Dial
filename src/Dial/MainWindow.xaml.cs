@@ -108,7 +108,15 @@ public sealed partial class MainWindow : Window
                 _localization["TitleBar.VersionTooltip"]);
             TitleBarControl.SetFeedbackEnabled(false);
             TitleBarControl.SetLogoImage(titleLogoPath);
-            TitleBarControl.SetSubtitle(DialCatchphrases.PickRandom());
+            var catchphrases = DialCatchphrases.All;
+            var catchphraseIndex = Random.Shared.Next(catchphrases.Count);
+            TitleBarControl.SetSubtitle(
+                catchphrases[catchphraseIndex],
+                () =>
+                {
+                    catchphraseIndex = (catchphraseIndex + 1) % catchphrases.Count;
+                    return catchphrases[catchphraseIndex];
+                });
         }
 
         _isInitializingBounds = false;

@@ -64,7 +64,11 @@
                     x:Name="SubtitleBlock"
                     FontSize="12"
                     TextWrapping="NoWrap"
-                    VerticalAlignment="Center" />
+                    VerticalAlignment="Center">
+                    <TextBlock.RenderTransform>
+                        <TranslateTransform x:Name="SubtitleTranslate" X="0" />
+                    </TextBlock.RenderTransform>
+                </TextBlock>
             </Border>
 
             <Button
