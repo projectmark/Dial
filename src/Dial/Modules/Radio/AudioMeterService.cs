@@ -22,6 +22,7 @@ public sealed class AudioMeterService : IAudioMeterService
     private const int AudioSessionStateActive = 1;
 
     private readonly Lock _gate = new();
+    private readonly float[] _peakBuffer = new float[2];
     private IAudioMeterInformation? _cachedMeter;
     private DateTimeOffset _lastResolveAttemptUtc = DateTimeOffset.MinValue;
 
@@ -60,10 +61,9 @@ public sealed class AudioMeterService : IAudioMeterService
 
                 if (channelCount >= 2)
                 {
-                    var peaks = new float[2];
-                    if (_cachedMeter.GetChannelsPeakValues(2, peaks) == 0)
+                    if (_cachedMeter.GetChannelsPeakValues(2, _peakBuffer) == 0)
                     {
-                        return (ToVuLevel(peaks[0]), ToVuLevel(peaks[1]));
+                        return (ToVuLevel(_peakBuffer[0]), ToVuLevel(_peakBuffer[1]));
                     }
                 }
                 else if (_cachedMeter.GetPeakValue(out var monoPeak) == 0)

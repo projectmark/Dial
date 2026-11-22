@@ -33,6 +33,7 @@ public interface IPackageShareService<T>
 public sealed class PackageShareService<T> : IPackageShareService<T>
 {
     private const string PackageFormat = "chassispack-v1";
+    private const int MaxPackagePayloadBytes = 8 * 1024 * 1024;
 
     private static readonly JsonSerializerOptions FileJsonOptions = new()
     {
@@ -91,6 +92,11 @@ public sealed class PackageShareService<T> : IPackageShareService<T>
         }
 
         await using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (fs.Length > MaxPackagePayloadBytes)
+        {
+            throw new InvalidDataException("Package file exceeds maximum allowed size.");
+        }
+
         var envelope = await JsonSerializer.DeserializeAsync<SharePackage<T>>(fs, FileJsonOptions, ct).ConfigureAwait(false)
             ?? throw new InvalidDataException("Invalid .chassispack payload.");
 
@@ -137,10 +143,27 @@ public sealed class PackageShareService<T> : IPackageShareService<T>
         }
 
         var compressed = FromBase64Url(payloadPart);
+        if (compressed.Length > MaxPackagePayloadBytes)
+        {
+            throw new InvalidDataException("Share code exceeds maximum allowed size.");
+        }
+
         using var input = new MemoryStream(compressed);
         using var brotli = new BrotliStream(input, CompressionMode.Decompress);
         using var output = new MemoryStream();
-        brotli.CopyTo(output);
+        var buffer = new byte[16_384];
+        var totalRead = 0;
+        int read;
+        while ((read = brotli.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            totalRead += read;
+            if (totalRead > MaxPackagePayloadBytes)
+            {
+                throw new InvalidDataException("Decompressed share code exceeds maximum allowed size.");
+            }
+
+            output.Write(buffer, 0, read);
+        }
 
         var envelope = JsonSerializer.Deserialize<SharePackage<T>>(output.ToArray(), CompactJsonOptions)
             ?? throw new InvalidDataException("Share code could not be deserialized.");

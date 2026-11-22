@@ -790,6 +790,32 @@ public sealed class DialRadioTests : IDisposable
         Assert.Equal("KINK — Foo Fighters - Everlong", DialCatchphrases.FormatLiveTitleBarStatus(new RadioStateSnapshot(kink, RadioPlaybackState.Buffering, " Foo Fighters - Everlong ", 0.8, false, null)));
     }
 
+    [Fact]
+    public async Task RadioBackupImporter_FiltersInvalidSchemesAndFrameQueueReleasesMemoryOnComplete()
+    {
+        var share = new PackageShareService<List<RadioStation>>("Dial");
+        var mixed = new List<RadioStation>
+        {
+            new("ok", "Valid Rock", "Tag", "https://stream.example.invalid/live.mp3", "file:///C:/evil.mp3", "\uE7F6", "#0078D4", 192),
+            new("bad1", "File Scheme", "Tag", "file:///C:/Windows/win.ini", string.Empty, "\uE7F6", "#0078D4", 192),
+            new("bad2", "Script Scheme", "Tag", "javascript:alert(1)", string.Empty, "\uE7F6", "#0078D4", 192),
+            new("bad3", "   ", "Tag", "https://stream.example.invalid/noname.mp3", string.Empty, "\uE7F6", "#0078D4", 192)
+        };
+
+        var code = share.ExportToShareCode(mixed);
+        var sanitized = RadioBackupImporter.ParseAny(code, share);
+        Assert.Single(sanitized);
+        Assert.Equal("Valid Rock", sanitized[0].Name);
+        Assert.Equal(string.Empty, sanitized[0].FallbackStreamUrl);
+
+        var queue = new TimedAudioFrameQueue(2);
+        await queue.EnqueueAsync(new AudioFrame(new byte[512], TimeSpan.FromSeconds(1), 44100, 2, 192, 1152), CancellationToken.None);
+        Assert.Equal(1, queue.FrameCount);
+        queue.Complete();
+        Assert.Equal(0, queue.FrameCount);
+        Assert.Equal(TimeSpan.Zero, queue.BufferedDuration);
+    }
+
     private sealed class StubJsonHandler(Func<HttpRequestMessage, string> responder) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

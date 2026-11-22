@@ -898,6 +898,11 @@ public sealed class RadioPlayerService : IRadioPlayerService
                 return;
             }
 
+            if (_state == RadioPlaybackState.Playing && bufferedSeconds >= 1.0)
+            {
+                _unexpectedEndRecoveryCount = 0;
+            }
+
             var delta = Math.Abs(bufferedSeconds - _bufferedSeconds);
             if (_state == RadioPlaybackState.Buffering || delta >= 0.4 || (bufferedSeconds == 0 && _bufferedSeconds > 0))
             {

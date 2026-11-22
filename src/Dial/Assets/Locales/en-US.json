@@ -204,7 +204,7 @@
   "Changelog.v011Alpha.AddedTitleBarCatchphraseAndLive": "Added live display of the active station and current track beside the version badge in the titlebar.",
   "Changelog.v011Alpha.AddedTrackLookup": "Added quick track lookup from the player and mini-player, configurable in Settings → Radio (toggleable with support for Spotify, YouTube Music, Deezer, and Tidal).",
   "Changelog.v011Alpha.AddedDiscoverMinBitrate": "Added minimum audio quality (bitrate) filtering in Discover (all qualities or 64+ to 320 kbps) with persisted preference and server/client enforcement.",
-  "Changelog.v011Alpha.ChangedPerformanceAndVolume": "Made the volume slider snappy (1% steps, debounced settings save, fast UI path) and improved overall responsiveness via cached theme brushes, instant tab switching, decoupled buffer telemetry, deduplicated tray menu rebuilds, and an idle-pausing VU meter.",
+  "Changelog.v011Alpha.ChangedPerformanceAndVolume": "General & performance improvements: snappy volume slider (1% steps, debounced save), instant tab switching, cached theme brushes, decoupled buffer telemetry, idle-pausing VU meter, and hardened memory/reconnect handling for multi-hour playback.",
   "Changelog.v011Alpha.ChangedFeedbackWip": "Marked the titlebar feedback button as greyed-out work-in-progress with a hover notice for upcoming GitHub issue integration.",
   "Changelog.v011Alpha.FixedGeneralUi": "General UI fixes: resolved an unintended 'F1' hover tooltip on buttons and added an unread release indicator to the Changelog button.",
   "Changelog.v010Alpha.Milestone": "First official Alpha release (v0.1.0-alpha): consolidates all prior pre-alpha testing iterations into a cohesive baseline build.",

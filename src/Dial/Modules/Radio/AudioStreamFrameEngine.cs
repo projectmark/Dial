@@ -18,7 +18,8 @@ public sealed record AudioFrame(
     TimeSpan Duration,
     int SampleRate,
     int Channels,
-    int BitrateKbps);
+    int BitrateKbps,
+    int SamplesPerFrame = 0);
 
 /// <summary>
 /// Pure-C# MPEG-1/2/2.5 Layer III (MP3) and AAC ADTS frame parser and stream accumulator
@@ -402,8 +403,8 @@ public sealed class AudioFrameAccumulator
 
             var payload = new byte[frameLen];
             span[..frameLen].CopyTo(payload);
-            var duration = TimeSpan.FromSeconds((double)spf / sr);
-            destination.Add(new AudioFrame(payload, duration, sr, ch, br));
+            var duration = TimeSpan.FromTicks((long)Math.Round(spf * (double)TimeSpan.TicksPerSecond / sr));
+            destination.Add(new AudioFrame(payload, duration, sr, ch, br, spf));
             _start += frameLen;
         }
     }
@@ -414,6 +415,10 @@ public sealed class AudioFrameAccumulator
         _end = 0;
         _locked = false;
         _pendingSkipBytes = 0;
+        if (_buffer.Length > 65_536)
+        {
+            _buffer = new byte[32_768];
+        }
     }
 
     private void CompactIfNeeded(int incomingLength)
@@ -434,6 +439,10 @@ public sealed class AudioFrameAccumulator
         {
             var newSize = Math.Max(_buffer.Length * 2, _end + incomingLength);
             Array.Resize(ref _buffer, newSize);
+        }
+        else if (_buffer.Length > 65_536 && _end + incomingLength <= 16_384)
+        {
+            Array.Resize(ref _buffer, 32_768);
         }
     }
 }
@@ -681,6 +690,9 @@ public sealed class TimedAudioFrameQueue
             _completed = true;
             _initialPrebufferReached = true;
             _isRebuffering = false;
+            _frames.Clear();
+            _frames.TrimExcess();
+            _bufferedDuration = TimeSpan.Zero;
             i = Interlocked.Exchange(ref _initialPrebufferWaiter, null);
             r = Interlocked.Exchange(ref _readWaiter, null);
             s = Interlocked.Exchange(ref _spaceWaiter, null);

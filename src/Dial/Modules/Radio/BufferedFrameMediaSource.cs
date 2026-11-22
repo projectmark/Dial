@@ -38,6 +38,7 @@ public sealed class BufferedFrameMediaSource : IDisposable
     private readonly string _upstreamUrl;
     private readonly HttpClient _http;
     private readonly CancellationTokenSource _cts = new();
+    private readonly CancellationToken _token;
     private readonly byte[] _scratchRead = new byte[ReadChunkSize];
     private readonly byte[] _scratchAudio = new byte[ReadChunkSize];
 
@@ -47,6 +48,8 @@ public sealed class BufferedFrameMediaSource : IDisposable
     private BufferedStreamProxy? _fallbackProxy;
     private MediaStreamSource? _mss;
     private TimeSpan _nextTimestamp = TimeSpan.Zero;
+    private long _deliveredSamples;
+    private int _timestampSampleRate;
     private string? _lastTitle;
     private bool _disposed;
 
@@ -55,6 +58,7 @@ public sealed class BufferedFrameMediaSource : IDisposable
         _upstreamUrl = upstreamUrl;
         _bufferSeconds = AudioBufferSizing.NormalizeSeconds(bufferSeconds);
         _http = httpClient ?? BufferedStreamProxy.SharedStreamHttpClient;
+        _token = _cts.Token;
     }
 
     public double BufferedSeconds => _queue?.BufferedDuration.TotalSeconds ?? 0;
@@ -434,20 +438,42 @@ public sealed class BufferedFrameMediaSource : IDisposable
         try
         {
             var queue = _queue;
-            if (queue is null || _cts.IsCancellationRequested)
+            if (queue is null || _token.IsCancellationRequested)
             {
                 return;
             }
 
-            var frame = await queue.DequeueAsync(_cts.Token).ConfigureAwait(false);
-            if (frame is null || _cts.IsCancellationRequested)
+            var frame = await queue.DequeueAsync(_token).ConfigureAwait(false);
+            if (frame is null || _token.IsCancellationRequested)
             {
                 return;
             }
 
-            var sample = MediaStreamSample.CreateFromBuffer(frame.Payload.AsBuffer(), _nextTimestamp);
-            sample.Duration = frame.Duration;
-            _nextTimestamp += frame.Duration;
+            TimeSpan sampleTime;
+            TimeSpan sampleDuration;
+            if (frame.SamplesPerFrame > 0 && frame.SampleRate > 0)
+            {
+                if (_timestampSampleRate != frame.SampleRate)
+                {
+                    _timestampSampleRate = frame.SampleRate;
+                    _deliveredSamples = 0;
+                }
+
+                var startTicks = _deliveredSamples * TimeSpan.TicksPerSecond / frame.SampleRate;
+                _deliveredSamples += frame.SamplesPerFrame;
+                var endTicks = _deliveredSamples * TimeSpan.TicksPerSecond / frame.SampleRate;
+                sampleTime = _nextTimestamp + TimeSpan.FromTicks(startTicks);
+                sampleDuration = TimeSpan.FromTicks(Math.Max(1, endTicks - startTicks));
+            }
+            else
+            {
+                sampleTime = _nextTimestamp;
+                sampleDuration = frame.Duration;
+                _nextTimestamp += frame.Duration;
+            }
+
+            var sample = MediaStreamSample.CreateFromBuffer(frame.Payload.AsBuffer(), sampleTime);
+            sample.Duration = sampleDuration;
             args.Request.Sample = sample;
         }
         catch (OperationCanceledException)
@@ -520,7 +546,5 @@ public sealed class BufferedFrameMediaSource : IDisposable
 
         _fallbackProxy?.Dispose();
         _fallbackProxy = null;
-
-        _cts.Dispose();
     }
 }

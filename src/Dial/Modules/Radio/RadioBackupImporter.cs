@@ -108,7 +108,8 @@ public static class RadioBackupImporter
                 var firstObj = doc.RootElement.EnumerateArray().FirstOrDefault(e => e.ValueKind == JsonValueKind.Object);
                 if (firstObj.ValueKind == JsonValueKind.Object && firstObj.TryGetProperty("streamUrl", out _))
                 {
-                    return JsonSerializer.Deserialize<List<RadioStation>>(trimmed, JsonOptions) ?? [];
+                    var stations = JsonSerializer.Deserialize<List<RadioStation>>(trimmed, JsonOptions) ?? [];
+                    return SanitizeImportedStations(stations);
                 }
 
                 return ParseRadiOhBackupJson(trimmed);
@@ -120,11 +121,54 @@ public static class RadioBackupImporter
             var envelope = JsonSerializer.Deserialize<SharePackage<List<RadioStation>>>(trimmed, JsonOptions);
             if (envelope?.Payload is not null)
             {
-                return envelope.Payload;
+                return SanitizeImportedStations(envelope.Payload);
             }
         }
 
-        return shareService.ImportFromShareCode(trimmed);
+        return SanitizeImportedStations(shareService.ImportFromShareCode(trimmed));
+    }
+
+    public static bool IsValidHttpStreamUrl(string? url)
+        => !string.IsNullOrWhiteSpace(url) &&
+           Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri) &&
+           (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+
+    private static IReadOnlyList<RadioStation> SanitizeImportedStations(IEnumerable<RadioStation>? stations)
+    {
+        if (stations is null)
+        {
+            return Array.Empty<RadioStation>();
+        }
+
+        var valid = new List<RadioStation>();
+        var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var s in stations)
+        {
+            if (s is null || string.IsNullOrWhiteSpace(s.Name) || !IsValidHttpStreamUrl(s.StreamUrl))
+            {
+                continue;
+            }
+
+            var cleanUrl = s.StreamUrl.Trim();
+            if (!seenUrls.Add(cleanUrl))
+            {
+                continue;
+            }
+
+            var cleanFallback = IsValidHttpStreamUrl(s.FallbackStreamUrl)
+                ? s.FallbackStreamUrl.Trim()
+                : string.Empty;
+
+            valid.Add(s with
+            {
+                Name = s.Name.Trim(),
+                StreamUrl = cleanUrl,
+                FallbackStreamUrl = cleanFallback
+            });
+        }
+
+        return valid;
     }
 
     private static string GetString(JsonElement el, string prop)

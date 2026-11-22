@@ -512,7 +512,7 @@ public sealed class BufferedStreamProxy : IDisposable
                 return new BufferedProxyStartResult(BufferedProxyStartStatus.BypassToDirect, null, _bitrateKbps, mediaType);
             }
 
-            _contentType = string.IsNullOrWhiteSpace(mediaType) ? "audio/mpeg" : mediaType!;
+            _contentType = SanitizeContentType(mediaType);
             _bitrateKbps = AudioBufferSizing.EstimateBitrateKbps(GetHeaderValue(initialResponse.Headers, "icy-br"));
             var capacity = AudioBufferSizing.CalculateCapacityBytes(_bufferSeconds, _bitrateKbps);
             _initialPrebufferBytes = AudioBufferSizing.CalculateInitialPrebufferBytes(_bufferSeconds, _bitrateKbps);
@@ -552,7 +552,7 @@ public sealed class BufferedStreamProxy : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        _contentType = string.IsNullOrWhiteSpace(contentType) ? "audio/mpeg" : contentType;
+        _contentType = SanitizeContentType(contentType);
         _bitrateKbps = bitrateKbps > 0 ? bitrateKbps : AudioBufferSizing.DefaultBitrateKbps;
         var capacity = AudioBufferSizing.CalculateCapacityBytes(_bufferSeconds, _bitrateKbps);
         _initialPrebufferBytes = AudioBufferSizing.CalculateInitialPrebufferBytes(_bufferSeconds, _bitrateKbps);
@@ -598,10 +598,11 @@ public sealed class BufferedStreamProxy : IDisposable
         var audioBuffer = new byte[ChunkSize];
 
         var prebufferTimeoutMs = Math.Max(4000, (_bufferSeconds * 1000) + 3000);
-        _ = Task.Delay(prebufferTimeoutMs, _cts.Token).ContinueWith(
+        using var prebufferTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
+        _ = Task.Delay(prebufferTimeoutMs, prebufferTimeoutCts.Token).ContinueWith(
             _ => _initialPrebufferReady.TrySetResult(true),
             CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
+            TaskContinuationOptions.OnlyOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
 
         if (!initialAudioPrefix.IsEmpty)
@@ -612,6 +613,7 @@ public sealed class BufferedStreamProxy : IDisposable
                 if (ring.Count >= _initialPrebufferBytes)
                 {
                     _initialPrebufferReady.TrySetResult(true);
+                    try { prebufferTimeoutCts.Cancel(); } catch { }
                 }
             }
             catch
@@ -653,9 +655,9 @@ public sealed class BufferedStreamProxy : IDisposable
                                     consecutiveFailures = 0;
                                     await ring.WriteAsync(audioBuffer.AsMemory(0, audioBytes), _cts.Token).ConfigureAwait(false);
 
-                                    if (ring.Count >= _initialPrebufferBytes)
+                                    if (ring.Count >= _initialPrebufferBytes && _initialPrebufferReady.TrySetResult(true))
                                     {
-                                        _initialPrebufferReady.TrySetResult(true);
+                                        try { prebufferTimeoutCts.Cancel(); } catch { }
                                     }
                                 }
                             }
@@ -724,6 +726,7 @@ public sealed class BufferedStreamProxy : IDisposable
         }
         finally
         {
+            try { prebufferTimeoutCts.Cancel(); } catch { }
             _initialPrebufferReady.TrySetResult(true);
             ring.Complete();
         }
@@ -914,6 +917,17 @@ public sealed class BufferedStreamProxy : IDisposable
             : 0;
     }
 
+    private static string SanitizeContentType(string? contentType)
+    {
+        if (string.IsNullOrWhiteSpace(contentType))
+        {
+            return "audio/mpeg";
+        }
+
+        var cleaned = new string(contentType.Trim().Where(c => c >= 0x20 && c < 0x7F).ToArray());
+        return string.IsNullOrWhiteSpace(cleaned) ? "audio/mpeg" : cleaned;
+    }
+
     private static string? GetHeaderValue(HttpResponseHeaders headers, string name)
         => headers.TryGetValues(name, out var values) ? values.FirstOrDefault() : null;
 
@@ -925,7 +939,7 @@ public sealed class BufferedStreamProxy : IDisposable
         }
 
         _disposed = true;
-        _cts.Cancel();
+        try { _cts.Cancel(); } catch { }
         _initialPrebufferReady.TrySetResult(true);
         _ringBuffer?.Complete();
 
@@ -937,6 +951,5 @@ public sealed class BufferedStreamProxy : IDisposable
         }
 
         try { _listener?.Stop(); } catch { }
-        _cts.Dispose();
     }
 }
