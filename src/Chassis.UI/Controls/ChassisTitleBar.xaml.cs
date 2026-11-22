@@ -1,11 +1,14 @@
 using Chassis.Core.Versioning;
 using Chassis.UI.Theme;
 using Microsoft.UI;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Foundation;
 using Windows.Graphics;
@@ -18,22 +21,38 @@ namespace Chassis.UI.Controls;
 /// </summary>
 public sealed partial class ChassisTitleBar : UserControl
 {
+    private readonly DispatcherQueueTimer _subtitleHideTimer;
+
     private AppWindow? _appWindow;
     private ThemeManager? _theme;
     private RectInt32 _lastDragRect;
     private string _feedbackTooltip = string.Empty;
     private bool _hasSubtitle;
+    private bool _isSubtitleVisible;
+    private double _subtitleExpandedWidth;
+    private Storyboard? _subtitleStoryboard;
     private bool _hasLiveStatus;
 
     public ChassisTitleBar()
     {
         InitializeComponent();
+
+        _subtitleHideTimer = DispatcherQueue.CreateTimer();
+        _subtitleHideTimer.Interval = TimeSpan.FromSeconds(5);
+        _subtitleHideTimer.IsRepeating = false;
+        _subtitleHideTimer.Tick += (_, _) => CollapseSubtitleAnimated();
+
         SizeChanged += (_, _) =>
         {
             UpdateResponsiveBadge();
             UpdateDragRectangles();
         };
         LayoutUpdated += (_, _) => UpdateDragRectangles();
+        Unloaded += (_, _) =>
+        {
+            _subtitleHideTimer.Stop();
+            _subtitleStoryboard?.Stop();
+        };
     }
 
     public event EventHandler? ChangelogRequested;
@@ -107,19 +126,155 @@ public sealed partial class ChassisTitleBar : UserControl
 
     public void SetSubtitle(string? subtitle)
     {
+        _subtitleStoryboard?.Stop();
+        _subtitleHideTimer.Stop();
+
         if (string.IsNullOrWhiteSpace(subtitle))
         {
             _hasSubtitle = false;
+            _isSubtitleVisible = false;
+            _subtitleExpandedWidth = 0;
             SubtitleBlock.Text = string.Empty;
+            SubtitleHost.Visibility = Visibility.Collapsed;
         }
         else
         {
             _hasSubtitle = true;
             SubtitleBlock.Text = $"— {subtitle.Trim()}";
+            SubtitleBlock.Measure(new Size(double.PositiveInfinity, 40));
+            _subtitleExpandedWidth = Math.Ceiling(SubtitleBlock.DesiredSize.Width) + 8;
+
+            var canShow = ActualWidth <= 0 || ActualWidth >= 760;
+            _isSubtitleVisible = canShow;
+            if (canShow)
+            {
+                SubtitleHost.Width = _subtitleExpandedWidth;
+                SubtitleHost.Opacity = 1;
+                SubtitleHost.Visibility = Visibility.Visible;
+                _subtitleHideTimer.Start();
+            }
+            else
+            {
+                SubtitleHost.Visibility = Visibility.Collapsed;
+            }
         }
 
         UpdateResponsiveBadge();
     }
+
+    private void ExpandSubtitleAnimated()
+    {
+        if (!_hasSubtitle || (ActualWidth > 0 && ActualWidth < 760))
+        {
+            return;
+        }
+
+        _subtitleStoryboard?.Stop();
+        _subtitleHideTimer.Stop();
+
+        if (_subtitleExpandedWidth <= 0)
+        {
+            SubtitleBlock.Measure(new Size(double.PositiveInfinity, 40));
+            _subtitleExpandedWidth = Math.Ceiling(SubtitleBlock.DesiredSize.Width) + 8;
+        }
+
+        _isSubtitleVisible = true;
+        if (SubtitleHost.Visibility != Visibility.Visible)
+        {
+            SubtitleHost.Width = 0;
+            SubtitleHost.Opacity = 0;
+            SubtitleHost.Visibility = Visibility.Visible;
+        }
+
+        var fromWidth = double.IsNaN(SubtitleHost.Width) ? SubtitleHost.ActualWidth : SubtitleHost.Width;
+        var sb = new Storyboard();
+
+        var widthAnim = new DoubleAnimation
+        {
+            From = fromWidth,
+            To = _subtitleExpandedWidth,
+            Duration = new Duration(TimeSpan.FromMilliseconds(320)),
+            EnableDependentAnimation = true,
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        };
+        Storyboard.SetTarget(widthAnim, SubtitleHost);
+        Storyboard.SetTargetProperty(widthAnim, nameof(SubtitleHost.Width));
+
+        var opacityAnim = new DoubleAnimation
+        {
+            From = SubtitleHost.Opacity,
+            To = 1.0,
+            Duration = new Duration(TimeSpan.FromMilliseconds(240)),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        };
+        Storyboard.SetTarget(opacityAnim, SubtitleHost);
+        Storyboard.SetTargetProperty(opacityAnim, nameof(SubtitleHost.Opacity));
+
+        sb.Children.Add(widthAnim);
+        sb.Children.Add(opacityAnim);
+        _subtitleStoryboard = sb;
+        sb.Begin();
+
+        _subtitleHideTimer.Start();
+    }
+
+    private void CollapseSubtitleAnimated()
+    {
+        if (!_isSubtitleVisible || SubtitleHost.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+
+        _subtitleStoryboard?.Stop();
+        _subtitleHideTimer.Stop();
+        _isSubtitleVisible = false;
+
+        var fromWidth = double.IsNaN(SubtitleHost.Width) ? SubtitleHost.ActualWidth : SubtitleHost.Width;
+        if (fromWidth <= 0)
+        {
+            SubtitleHost.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var sb = new Storyboard();
+
+        var widthAnim = new DoubleAnimation
+        {
+            From = fromWidth,
+            To = 0,
+            Duration = new Duration(TimeSpan.FromMilliseconds(320)),
+            EnableDependentAnimation = true,
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
+        };
+        Storyboard.SetTarget(widthAnim, SubtitleHost);
+        Storyboard.SetTargetProperty(widthAnim, nameof(SubtitleHost.Width));
+
+        var opacityAnim = new DoubleAnimation
+        {
+            From = SubtitleHost.Opacity,
+            To = 0.0,
+            Duration = new Duration(TimeSpan.FromMilliseconds(160)),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
+        };
+        Storyboard.SetTarget(opacityAnim, SubtitleHost);
+        Storyboard.SetTargetProperty(opacityAnim, nameof(SubtitleHost.Opacity));
+
+        sb.Children.Add(widthAnim);
+        sb.Children.Add(opacityAnim);
+        sb.Completed += (_, _) =>
+        {
+            if (!_isSubtitleVisible)
+            {
+                SubtitleHost.Visibility = Visibility.Collapsed;
+            }
+        };
+
+        _subtitleStoryboard = sb;
+        sb.Begin();
+    }
+
+    private void BrandGroup_Tapped(object sender, TappedRoutedEventArgs e)
+        => ExpandSubtitleAnimated();
 
     public void SetLiveStatus(string? statusText, SolidColorBrush? dotBrush)
     {
@@ -206,9 +361,13 @@ public sealed partial class ChassisTitleBar : UserControl
             ? $"v{AppVersion.BaseVersion}"
             : AppVersion.ShortDisplayVersion;
 
-        SubtitleBlock.Visibility = _hasSubtitle && (width <= 0 || width >= 760)
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        if (!_hasSubtitle || (width > 0 && width < 760))
+        {
+            _subtitleHideTimer.Stop();
+            _subtitleStoryboard?.Stop();
+            _isSubtitleVisible = false;
+            SubtitleHost.Visibility = Visibility.Collapsed;
+        }
 
         LiveStatusPanel.Visibility = _hasLiveStatus && (width <= 0 || width >= 460)
             ? Visibility.Visible

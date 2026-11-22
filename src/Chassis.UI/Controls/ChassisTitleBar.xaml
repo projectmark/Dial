@@ -17,45 +17,60 @@
             Grid.Column="0"
             Orientation="Horizontal"
             VerticalAlignment="Center"
-            Spacing="8">
-            <Border
-                x:Name="LogoBadge"
-                Width="22"
-                Height="22"
-                CornerRadius="6"
-                BorderThickness="1">
-                <Grid>
-                    <FontIcon
-                        x:Name="LogoGlyph"
-                        FontFamily="Segoe Fluent Icons"
-                        Glyph="&#xE8F1;"
-                        FontSize="12"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center" />
-                    <Image
-                        x:Name="LogoImage"
-                        Width="22"
-                        Height="22"
-                        Stretch="UniformToFill"
-                        Visibility="Collapsed" />
-                </Grid>
-            </Border>
-
-            <TextBlock
-                x:Name="TitleBlock"
-                FontSize="13"
-                FontWeight="SemiBold"
-                VerticalAlignment="Center" />
-
-            <TextBlock
-                x:Name="SubtitleBlock"
-                FontSize="12"
+            Spacing="0">
+            <StackPanel
+                x:Name="BrandGroup"
+                Orientation="Horizontal"
                 VerticalAlignment="Center"
-                Visibility="Collapsed" />
+                Spacing="8"
+                Background="Transparent"
+                Tapped="BrandGroup_Tapped">
+                <Border
+                    x:Name="LogoBadge"
+                    Width="22"
+                    Height="22"
+                    CornerRadius="6"
+                    BorderThickness="1">
+                    <Grid>
+                        <FontIcon
+                            x:Name="LogoGlyph"
+                            FontFamily="Segoe Fluent Icons"
+                            Glyph="&#xE8F1;"
+                            FontSize="12"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center" />
+                        <Image
+                            x:Name="LogoImage"
+                            Width="22"
+                            Height="22"
+                            Stretch="UniformToFill"
+                            Visibility="Collapsed" />
+                    </Grid>
+                </Border>
+
+                <TextBlock
+                    x:Name="TitleBlock"
+                    FontSize="13"
+                    FontWeight="SemiBold"
+                    VerticalAlignment="Center" />
+            </StackPanel>
+
+            <Border
+                x:Name="SubtitleHost"
+                Padding="8,0,0,0"
+                VerticalAlignment="Center"
+                Visibility="Collapsed">
+                <TextBlock
+                    x:Name="SubtitleBlock"
+                    FontSize="12"
+                    TextWrapping="NoWrap"
+                    VerticalAlignment="Center" />
+            </Border>
 
             <Button
                 x:Name="VersionBadgeButton"
                 Height="24"
+                Margin="8,0,0,0"
                 Padding="10,0"
                 CornerRadius="12"
                 Click="VersionBadgeButton_Click">
