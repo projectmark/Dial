@@ -64,6 +64,8 @@ public sealed partial class HomeView : UserControl
     private bool _isUpdatingSliderFromInput;
     private bool? _lastRenderedMuted;
     private (string ViewMode, bool ShowNumbers, string Alignment, string FontSize) _lastListLayoutSignature;
+    private string? _lastRenderedCulture;
+    private List<(string Id, string Name, string StreamUrl)> _lastRenderedStations = [];
     private bool _isSubscribed;
     private bool _isEditMode;
     private bool _isSingleColumn;
@@ -126,9 +128,40 @@ public sealed partial class HomeView : UserControl
             _isSubscribed = true;
         }
 
-        RebuildStationsUi();
-        ApplyLocalization();
+        if (ReadListLayoutSignature() != _lastListLayoutSignature || StationsDifferFromRendered())
+        {
+            RebuildStationsUi();
+        }
+
+        if (!string.Equals(_lastRenderedCulture, _localization.CurrentCulture, StringComparison.Ordinal))
+        {
+            ApplyLocalization();
+        }
+
         RenderState(_player.Current);
+    }
+
+    private bool StationsDifferFromRendered()
+    {
+        var current = _player.Stations;
+        if (current.Count != _lastRenderedStations.Count)
+        {
+            return true;
+        }
+
+        for (var i = 0; i < current.Count; i++)
+        {
+            var a = current[i];
+            var b = _lastRenderedStations[i];
+            if (!string.Equals(a.Id, b.Id, StringComparison.Ordinal) ||
+                !string.Equals(a.Name, b.Name, StringComparison.Ordinal) ||
+                !string.Equals(a.StreamUrl, b.StreamUrl, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -281,6 +314,7 @@ public sealed partial class HomeView : UserControl
         _editRowVisuals.Clear();
 
         var stations = _player.Stations;
+        _lastRenderedStations = stations.Select(s => (s.Id, s.Name, s.StreamUrl)).ToList();
         _selectedStationIds.RemoveWhere(id => !stations.Any(s => string.Equals(s.Id, id, StringComparison.OrdinalIgnoreCase)));
         if (_lastSelectionAnchorIndex >= stations.Count)
         {
@@ -760,6 +794,7 @@ public sealed partial class HomeView : UserControl
 
     private void ApplyLocalization()
     {
+        _lastRenderedCulture = _localization.CurrentCulture;
         StationsHeading.Text = _localization["Radio.StationsHeading"];
         MinimizeTrayLabel.Text = _localization["Radio.MinimizeToTray"];
         PreviewBadgeText.Text = _localization["Radio.PreviewBadge"];

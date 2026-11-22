@@ -23,6 +23,8 @@ public sealed partial class HelpView : UserControl
     private bool _isChangelogMode;
     private bool _isUpdatingCombo;
     private bool _isSubscribed;
+    private string? _lastRenderedCulture;
+    private bool _lastRenderedIsDark;
     private string _selectedCategoryKey = "All";
     private string? _selectedArticleId;
     private IReadOnlyList<KnowledgeArticle> _visibleArticles = Array.Empty<KnowledgeArticle>();
@@ -46,7 +48,15 @@ public sealed partial class HelpView : UserControl
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
 
-        RefreshLocalizedUi();
+        if (!string.Equals(_lastRenderedCulture, _localization.CurrentCulture, StringComparison.Ordinal) ||
+            _lastRenderedIsDark != _theme.IsDarkTheme)
+        {
+            RefreshLocalizedUi();
+        }
+        else
+        {
+            UpdateChangelogUnreadIndicator();
+        }
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -59,7 +69,15 @@ public sealed partial class HelpView : UserControl
             _isSubscribed = true;
         }
 
-        RefreshLocalizedUi();
+        if (!string.Equals(_lastRenderedCulture, _localization.CurrentCulture, StringComparison.Ordinal) ||
+            _lastRenderedIsDark != _theme.IsDarkTheme)
+        {
+            RefreshLocalizedUi();
+        }
+        else
+        {
+            UpdateChangelogUnreadIndicator();
+        }
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -92,6 +110,7 @@ public sealed partial class HelpView : UserControl
 
     public void SwitchToMode(bool changelogMode)
     {
+        var sameMode = _isChangelogMode == changelogMode;
         _isChangelogMode = changelogMode;
         DocsFilterBar.Visibility = changelogMode ? Visibility.Collapsed : Visibility.Visible;
         DocsSplitGrid.Visibility = changelogMode ? Visibility.Collapsed : Visibility.Visible;
@@ -100,9 +119,12 @@ public sealed partial class HelpView : UserControl
         if (changelogMode)
         {
             _changelog.MarkCurrentAsViewed();
-            BuildChangelogTimeline();
+            if (!sameMode || ChangelogPanel.Children.Count == 0)
+            {
+                BuildChangelogTimeline();
+            }
         }
-        else
+        else if (!sameMode || ArticleListPanel.Children.Count == 0)
         {
             RefreshArticles();
         }
@@ -126,6 +148,8 @@ public sealed partial class HelpView : UserControl
 
     private void RefreshLocalizedUi()
     {
+        _lastRenderedCulture = _localization.CurrentCulture;
+        _lastRenderedIsDark = _theme.IsDarkTheme;
         HeaderTitle.Text = _localization["Help.Title"];
         HeaderSubtitle.Text = _localization["Help.Subtitle"];
         DocsModeBtn.Content = _localization["Help.Tab.Docs"];
@@ -423,6 +447,7 @@ public sealed partial class HelpView : UserControl
 
     private void ApplyThemeVisuals()
     {
+        _lastRenderedIsDark = _theme.IsDarkTheme;
         HeaderTitle.Foreground = _theme.GetTextPrimaryBrush();
         HeaderSubtitle.Foreground = _theme.GetTextSecondaryBrush();
 
