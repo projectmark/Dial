@@ -772,6 +772,24 @@ public sealed class DialRadioTests : IDisposable
             MusicLookupHelper.BuildSearchUrl("unknown_service", rawTrack));
     }
 
+    [Fact]
+    public void DialCatchphrases_ProvidesAllFiveAndFormatsLiveTitleBarStatus()
+    {
+        Assert.Equal(5, DialCatchphrases.All.Count);
+        Assert.Contains("Dialed in on every station.", DialCatchphrases.All);
+        Assert.Contains("Live radio, dialed in.", DialCatchphrases.All);
+        Assert.Contains("From airwaves to streams, dialed in.", DialCatchphrases.All);
+        Assert.Contains("Every broadcast, dialed in.", DialCatchphrases.All);
+        Assert.Contains("Always dialed in.", DialCatchphrases.All);
+        Assert.Contains(DialCatchphrases.PickRandom(new Random(42)), DialCatchphrases.All);
+
+        var kink = KinkStationCatalog.DefaultStations[0];
+        Assert.Null(DialCatchphrases.FormatLiveTitleBarStatus(new RadioStateSnapshot(kink, RadioPlaybackState.Stopped, "Track", 0.8, false, null)));
+        Assert.Null(DialCatchphrases.FormatLiveTitleBarStatus(new RadioStateSnapshot(kink, RadioPlaybackState.Error, "Track", 0.8, false, "Err")));
+        Assert.Equal("KINK", DialCatchphrases.FormatLiveTitleBarStatus(new RadioStateSnapshot(kink, RadioPlaybackState.Playing, null, 0.8, false, null)));
+        Assert.Equal("KINK — Foo Fighters - Everlong", DialCatchphrases.FormatLiveTitleBarStatus(new RadioStateSnapshot(kink, RadioPlaybackState.Buffering, " Foo Fighters - Everlong ", 0.8, false, null)));
+    }
+
     private sealed class StubJsonHandler(Func<HttpRequestMessage, string> responder) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

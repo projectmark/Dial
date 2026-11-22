@@ -98,6 +98,41 @@ public static class MusicLookupHelper
 }
 
 /// <summary>
+/// Rotating startup catchphrases and titlebar live-status formatting for Dial.
+/// </summary>
+public static class DialCatchphrases
+{
+    public static IReadOnlyList<string> All { get; } = (string[])
+    [
+        "Dialed in on every station.",
+        "Live radio, dialed in.",
+        "From airwaves to streams, dialed in.",
+        "Every broadcast, dialed in.",
+        "Always dialed in."
+    ];
+
+    public static string PickRandom(Random? random = null)
+    {
+        var rng = random ?? Random.Shared;
+        return All[rng.Next(All.Count)];
+    }
+
+    public static string? FormatLiveTitleBarStatus(RadioStateSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (snapshot.ActiveStation is null ||
+            snapshot.State is not (RadioPlaybackState.Playing or RadioPlaybackState.Buffering))
+        {
+            return null;
+        }
+
+        return string.IsNullOrWhiteSpace(snapshot.NowPlaying)
+            ? snapshot.ActiveStation.Name
+            : $"{snapshot.ActiveStation.Name} — {snapshot.NowPlaying.Trim()}";
+    }
+}
+
+/// <summary>
 /// Canonical hotkey identifiers and default key chords for the Dial radio module.
 /// </summary>
 public static class RadioHotkeyDefaults

@@ -22,6 +22,8 @@ public sealed partial class ChassisTitleBar : UserControl
     private ThemeManager? _theme;
     private RectInt32 _lastDragRect;
     private string _feedbackTooltip = string.Empty;
+    private bool _hasSubtitle;
+    private bool _hasLiveStatus;
 
     public ChassisTitleBar()
     {
@@ -103,6 +105,42 @@ public sealed partial class ChassisTitleBar : UserControl
         }
     }
 
+    public void SetSubtitle(string? subtitle)
+    {
+        if (string.IsNullOrWhiteSpace(subtitle))
+        {
+            _hasSubtitle = false;
+            SubtitleBlock.Text = string.Empty;
+        }
+        else
+        {
+            _hasSubtitle = true;
+            SubtitleBlock.Text = $"— {subtitle.Trim()}";
+        }
+
+        UpdateResponsiveBadge();
+    }
+
+    public void SetLiveStatus(string? statusText, SolidColorBrush? dotBrush)
+    {
+        if (string.IsNullOrWhiteSpace(statusText))
+        {
+            _hasLiveStatus = false;
+            LiveStatusText.Text = string.Empty;
+        }
+        else
+        {
+            _hasLiveStatus = true;
+            LiveStatusText.Text = statusText.Trim();
+            if (dotBrush is not null)
+            {
+                LiveStatusDot.Fill = dotBrush;
+            }
+        }
+
+        UpdateResponsiveBadge();
+    }
+
     public void SetUnreadChangelogState(bool hasUnread)
     {
         HelpUnreadDot.Visibility = hasUnread ? Visibility.Visible : Visibility.Collapsed;
@@ -135,6 +173,8 @@ public sealed partial class ChassisTitleBar : UserControl
         }
 
         TitleBlock.Foreground = _theme.GetTextPrimaryBrush();
+        SubtitleBlock.Foreground = _theme.GetTextSecondaryBrush();
+        LiveStatusText.Foreground = _theme.GetTextPrimaryBrush();
         if (LogoImage.Visibility == Visibility.Visible)
         {
             LogoBadge.BorderThickness = new Thickness(0);
@@ -161,9 +201,18 @@ public sealed partial class ChassisTitleBar : UserControl
 
     private void UpdateResponsiveBadge()
     {
-        VersionBadgeText.Text = ActualWidth > 0 && ActualWidth < 480
+        var width = ActualWidth;
+        VersionBadgeText.Text = width > 0 && width < 480
             ? $"v{AppVersion.BaseVersion}"
             : AppVersion.ShortDisplayVersion;
+
+        SubtitleBlock.Visibility = _hasSubtitle && (width <= 0 || width >= 760)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        LiveStatusPanel.Visibility = _hasLiveStatus && (width <= 0 || width >= 460)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
     }
 
     private void UpdateDragRectangles()

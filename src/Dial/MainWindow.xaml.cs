@@ -40,6 +40,7 @@ public sealed partial class MainWindow : Window
     private readonly IChangelogService _changelog;
     private readonly INavigationRegistry _navRegistry;
     private readonly ITrayService _tray;
+    private readonly IRadioPlayerService _player;
     private readonly ThemeManager _theme;
     private readonly Dictionary<string, UIElement> _viewCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<Button> _navButtons = [];
@@ -75,6 +76,7 @@ public sealed partial class MainWindow : Window
         _changelog = App.Services.GetRequiredService<IChangelogService>();
         _navRegistry = App.Services.GetRequiredService<INavigationRegistry>();
         _tray = App.Services.GetRequiredService<ITrayService>();
+        _player = App.Services.GetRequiredService<IRadioPlayerService>();
         _theme = App.Services.GetRequiredService<ThemeManager>();
 
         _hwnd = WindowNative.GetWindowHandle(this);
@@ -106,6 +108,7 @@ public sealed partial class MainWindow : Window
                 _localization["TitleBar.VersionTooltip"]);
             TitleBarControl.SetFeedbackEnabled(false);
             TitleBarControl.SetLogoImage(titleLogoPath);
+            TitleBarControl.SetSubtitle(DialCatchphrases.PickRandom());
         }
 
         _isInitializingBounds = false;
@@ -119,6 +122,7 @@ public sealed partial class MainWindow : Window
         _localization.LanguageChanged += OnLanguageChanged;
         _changelog.UnreadStateChanged += OnChangelogUnreadChanged;
         _navRegistry.ItemsChanged += BuildNavigationBar;
+        _player.StateChanged += OnPlayerStateChanged;
 
         RootGrid.SizeChanged += OnRootSizeChanged;
         Closed += OnWindowClosed;
@@ -127,6 +131,7 @@ public sealed partial class MainWindow : Window
         RegisterAccelerators();
         InstallMinSizeSubclass();
         ApplySurfaceBrushes();
+        UpdateTitleBarLiveStatus(_player.Current);
         NavigateTo("home");
     }
 
@@ -516,7 +521,26 @@ public sealed partial class MainWindow : Window
     {
         ApplySurfaceBrushes();
         TitleBarControl.ApplyThemeVisuals();
+        UpdateTitleBarLiveStatus(_player.Current);
         RefreshNavigationButtons();
+    }
+
+    private void OnPlayerStateChanged(RadioStateSnapshot snapshot)
+        => DispatcherQueue.TryEnqueue(() => UpdateTitleBarLiveStatus(snapshot));
+
+    private void UpdateTitleBarLiveStatus(RadioStateSnapshot snapshot)
+    {
+        var status = DialCatchphrases.FormatLiveTitleBarStatus(snapshot);
+        if (status is null)
+        {
+            TitleBarControl.SetLiveStatus(null, null);
+            return;
+        }
+
+        var dotBrush = snapshot.State == RadioPlaybackState.Playing
+            ? _theme.GetSuccessBrush()
+            : _theme.GetCautionBrush();
+        TitleBarControl.SetLiveStatus(status, dotBrush);
     }
 
     private void OnChangelogUnreadChanged(bool hasUnread)
@@ -699,6 +723,7 @@ public sealed partial class MainWindow : Window
         _localization.LanguageChanged -= OnLanguageChanged;
         _changelog.UnreadStateChanged -= OnChangelogUnreadChanged;
         _navRegistry.ItemsChanged -= BuildNavigationBar;
+        _player.StateChanged -= OnPlayerStateChanged;
 
         if (_hwnd != IntPtr.Zero && _subclassDelegate is not null)
         {
