@@ -12,6 +12,8 @@ public sealed record TrayMenuItemDescriptor(string Id, string Label, Action Call
 public interface ITrayService : IDisposable
 {
     void Initialize(string showLabel, string exitLabel, Action onRestore, Action onExit);
+    void Initialize(string showLabel, string exitLabel, Action onRestore, Action onExit, Action? onPrimaryClick)
+        => Initialize(showLabel, exitLabel, onRestore, onExit);
     void UpdateLabels(string showLabel, string exitLabel);
     void SetCustomMenuItems(IReadOnlyList<TrayMenuItemDescriptor> items);
     void ShowNotification(string title, string message);
@@ -50,6 +52,7 @@ public sealed class TrayService : ITrayService
     private readonly Guid _handlerId;
     private IReadOnlyList<TrayMenuItemDescriptor> _customItems = Array.Empty<TrayMenuItemDescriptor>();
     private Action? _onRestore;
+    private Action? _onPrimaryClick;
     private Action? _onExit;
     private string _showLabel = "Open";
     private string _exitLabel = "Exit";
@@ -65,10 +68,15 @@ public sealed class TrayService : ITrayService
 
     /// <inheritdoc />
     public void Initialize(string showLabel, string exitLabel, Action onRestore, Action onExit)
+        => Initialize(showLabel, exitLabel, onRestore, onExit, onPrimaryClick: null);
+
+    /// <inheritdoc />
+    public void Initialize(string showLabel, string exitLabel, Action onRestore, Action onExit, Action? onPrimaryClick)
     {
         _showLabel = showLabel;
         _exitLabel = exitLabel;
         _onRestore = onRestore;
+        _onPrimaryClick = onPrimaryClick;
         _onExit = onExit;
 
         if (_initialized || !OperatingSystem.IsWindows() || _messageHost.Handle == IntPtr.Zero)
@@ -119,14 +127,25 @@ public sealed class TrayService : ITrayService
         });
     }
 
+    internal IntPtr HandleTrayMessageForTest(uint msg, IntPtr lParam, out bool handled)
+        => OnWin32Message(IntPtr.Zero, msg, IntPtr.Zero, lParam, out handled);
+
     private IntPtr OnWin32Message(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam, out bool handled)
     {
         if (msg == WmTrayCallback)
         {
             var eventId = unchecked((uint)(lParam.ToInt64() & 0xFFFF));
-            if (eventId is WmLButtonUp or WmLButtonDblClk)
+            if (eventId == WmLButtonUp)
             {
-                _onRestore?.Invoke();
+                GrantForegroundPermission();
+                (_onPrimaryClick ?? _onRestore)?.Invoke();
+                handled = true;
+                return IntPtr.Zero;
+            }
+
+            if (eventId == WmLButtonDblClk)
+            {
+                // Ignore double-click notifications so a double-click doesn't toggle twice alongside WM_LBUTTONUP.
                 handled = true;
                 return IntPtr.Zero;
             }
@@ -141,6 +160,14 @@ public sealed class TrayService : ITrayService
 
         handled = false;
         return IntPtr.Zero;
+    }
+
+    private static void GrantForegroundPermission()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            _ = AllowSetForegroundWindow((uint)Environment.ProcessId);
+        }
     }
 
     private void ShowContextMenu(IntPtr hwnd)
@@ -182,6 +209,7 @@ public sealed class TrayService : ITrayService
 
             if (selected == CmdShow)
             {
+                GrantForegroundPermission();
                 _onRestore?.Invoke();
             }
             else if (selected == CmdExit)
@@ -320,4 +348,7 @@ public sealed class TrayService : ITrayService
 
     [DllImport("user32.dll")]
     private static extern bool DestroyIcon(IntPtr hIcon);
+
+    [DllImport("user32.dll")]
+    private static extern bool AllowSetForegroundWindow(uint dwProcessId);
 }

@@ -147,7 +147,10 @@ public sealed partial class MainWindow : Window
         InstallMinSizeSubclass();
         ApplySurfaceBrushes();
         UpdateTitleBarLiveStatus(_player.Current);
-        NavigateTo("home");
+        if (!_settings.Current.StartMinimized)
+        {
+            NavigateTo("home");
+        }
     }
 
     public void NavigateTo(string navId, bool openChangelog = false)
@@ -433,9 +436,21 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    public void ToggleVisibilityFromHotkey()
+    private const int SwShow = 5;
+    private const int SwRestore = 9;
+    private const uint SwpNosize = 0x0001;
+    private const uint SwpNomove = 0x0002;
+    private const uint SwpShowWindow = 0x0040;
+    private static readonly IntPtr HwndTopmost = new(-1);
+    private static readonly IntPtr HwndNottopmost = new(-2);
+
+    public void ToggleVisibilityFromTray() => ToggleVisibility();
+
+    public void ToggleVisibilityFromHotkey() => ToggleVisibility();
+
+    private void ToggleVisibility()
     {
-        if (_isCollapsedToTray || _appWindow is { IsVisible: false })
+        if (IsWindowHiddenOrMinimized())
         {
             RestoreFromTrayOrActivate();
         }
@@ -443,6 +458,22 @@ public sealed partial class MainWindow : Window
         {
             CollapseToTray(showNotification: false);
         }
+    }
+
+    private bool IsWindowHiddenOrMinimized()
+    {
+        if (_isCollapsedToTray || _appWindow is null || !_appWindow.IsVisible)
+        {
+            return true;
+        }
+
+        if (_appWindow.Presenter is OverlappedPresenter presenter &&
+            presenter.State == OverlappedPresenterState.Minimized)
+        {
+            return true;
+        }
+
+        return _hwnd != IntPtr.Zero && IsIconic(_hwnd);
     }
 
     public void CollapseToTray(bool showNotification)
@@ -456,7 +487,7 @@ public sealed partial class MainWindow : Window
         ContentHost.Content = null;
         _viewCache.Clear();
         _appWindow?.Hide();
-        GC.Collect(1, GCCollectionMode.Optimized, blocking: false);
+        GC.Collect(1, GCCollectionMode.Forced, blocking: false);
 
         if (showNotification && _settings.Current.ShowTrayNotifications && !_trayNoticeShown)
         {
@@ -491,8 +522,52 @@ public sealed partial class MainWindow : Window
             NavigateTo(_activeNavId);
         }
 
-        Activate();
+        BringWindowToFrontOnTop();
         TriggerStartupFlowsIfPending();
+    }
+
+    private void BringWindowToFrontOnTop()
+    {
+        if (_hwnd == IntPtr.Zero)
+        {
+            Activate();
+            return;
+        }
+
+        if (IsIconic(_hwnd))
+        {
+            ShowWindow(_hwnd, SwRestore);
+        }
+        else
+        {
+            ShowWindow(_hwnd, SwShow);
+        }
+
+        var keepAlwaysOnTop = _isMiniPlayerMode && _settings.GetOption(RadioModule.MiniAlwaysOnTopOptionKey, true);
+        SetWindowPos(_hwnd, HwndTopmost, 0, 0, 0, 0, SwpNomove | SwpNosize | SwpShowWindow);
+        if (!keepAlwaysOnTop)
+        {
+            SetWindowPos(_hwnd, HwndNottopmost, 0, 0, 0, 0, SwpNomove | SwpNosize | SwpShowWindow);
+        }
+
+        var fgHwnd = GetForegroundWindow();
+        var fgThread = fgHwnd != IntPtr.Zero ? GetWindowThreadProcessId(fgHwnd, out _) : 0u;
+        var currentThread = GetCurrentThreadId();
+        var attached = fgThread != 0 && fgThread != currentThread && AttachThreadInput(currentThread, fgThread, true);
+        try
+        {
+            SetForegroundWindow(_hwnd);
+            BringWindowToTop(_hwnd);
+        }
+        finally
+        {
+            if (attached)
+            {
+                AttachThreadInput(currentThread, fgThread, false);
+            }
+        }
+
+        Activate();
     }
 
     private void OnAppWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
@@ -913,6 +988,46 @@ public sealed partial class MainWindow : Window
 
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsIconic(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(
+        IntPtr hWnd,
+        IntPtr hWndInsertAfter,
+        int x,
+        int y,
+        int cx,
+        int cy,
+        uint uFlags);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, [MarshalAs(UnmanagedType.Bool)] bool fAttach);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool BringWindowToTop(IntPtr hWnd);
 
     [DllImport("comctl32.dll")]
     private static extern bool SetWindowSubclass(IntPtr hWnd, SubclassProc pfnSubclass, nuint uIdSubclass, IntPtr dwRefData);

@@ -203,6 +203,13 @@ public sealed partial class HomeView : UserControl
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
+        if (_isStickyCompositionActive)
+        {
+            _editToolbarVisual?.StopAnimation("Translation");
+            _scrollViewerClip?.StopAnimation("TopInset");
+            _isStickyCompositionActive = false;
+        }
+
         if (_isSubscribed)
         {
             _player.StateChanged -= OnPlayerStateChanged;

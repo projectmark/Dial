@@ -1,9 +1,11 @@
 using Chassis.Core.Changelog;
+using Chassis.Core.Interop;
 using Chassis.Core.KnowledgeBase;
 using Chassis.Core.Localization;
 using Chassis.Core.Modules;
 using Chassis.Core.Paths;
 using Chassis.Core.Settings;
+using Chassis.Core.Tray;
 using Chassis.Core.Versioning;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -153,6 +155,61 @@ public sealed class CoreServiceTests : IDisposable
 
         Assert.True(module.Initialized);
         Assert.Equal("probe-ok", provider.GetRequiredService<ProbeDependency>().Value);
+    }
+
+    [Fact]
+    public void TrayService_LeftClickInvokesPrimaryToggleWithoutDoubleTriggerOnDoubleClick()
+    {
+        const uint wmTrayCallback = 0x8000 + 100;
+        var lButtonUp = new IntPtr(0x0202);
+        var lButtonDblClk = new IntPtr(0x0203);
+
+        using var msgHost = new Win32MessageHost();
+        using var tray = new TrayService(msgHost);
+
+        var restoreCount = 0;
+        var toggleCount = 0;
+        tray.Initialize(
+            "Open",
+            "Exit",
+            onRestore: () => restoreCount++,
+            onExit: () => { },
+            onPrimaryClick: () => toggleCount++);
+
+        tray.HandleTrayMessageForTest(wmTrayCallback, lButtonUp, out var handled1);
+        Assert.True(handled1);
+        Assert.Equal(1, toggleCount);
+        Assert.Equal(0, restoreCount);
+
+        tray.HandleTrayMessageForTest(wmTrayCallback, lButtonDblClk, out var handledDbl);
+        Assert.True(handledDbl);
+        Assert.Equal(1, toggleCount);
+
+        tray.HandleTrayMessageForTest(wmTrayCallback, lButtonUp, out var handled2);
+        Assert.True(handled2);
+        Assert.Equal(2, toggleCount);
+        Assert.Equal(0, restoreCount);
+    }
+
+    [Fact]
+    public void TrayService_FourArgInitializeFallsBackToRestoreOnLeftClick()
+    {
+        const uint wmTrayCallback = 0x8000 + 100;
+        var lButtonUp = new IntPtr(0x0202);
+
+        using var msgHost = new Win32MessageHost();
+        using var tray = new TrayService(msgHost);
+
+        var restoreCount = 0;
+        tray.Initialize(
+            "Open",
+            "Exit",
+            onRestore: () => restoreCount++,
+            onExit: () => { });
+
+        tray.HandleTrayMessageForTest(wmTrayCallback, lButtonUp, out var handled);
+        Assert.True(handled);
+        Assert.Equal(1, restoreCount);
     }
 
     private sealed record ProbeDependency(string Value);

@@ -130,7 +130,8 @@ public sealed partial class App : Application
             localization["Tray.Open"],
             localization["Tray.Exit"],
             () => MainWindow.Instance?.DispatcherQueue.TryEnqueue(() => MainWindow.Instance?.RestoreFromTrayOrActivate()),
-            () => MainWindow.Instance?.DispatcherQueue.TryEnqueue(RequestExit));
+            () => MainWindow.Instance?.DispatcherQueue.TryEnqueue(RequestExit),
+            () => MainWindow.Instance?.DispatcherQueue.TryEnqueue(() => MainWindow.Instance?.ToggleVisibilityFromTray()));
     }
 
     private void InitializeExceptionHandlers()
