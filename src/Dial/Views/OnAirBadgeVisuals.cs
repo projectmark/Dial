@@ -22,8 +22,10 @@ internal sealed record OnAirStudioPalette(
 
 internal static class OnAirBadgeVisuals
 {
-    internal const double GlowRestOpacity = 0.72;
-    internal const double DotHaloRestOpacity = 0.68;
+    internal const double GlowRestOpacity = 0.44;
+    internal const double DotHaloRestOpacity = 0.46;
+    internal const double GlowRestScale = 0.94;
+    internal const double DotHaloRestScale = 0.92;
 
     private static OnAirStudioPalette? _lightPalette;
     private static OnAirStudioPalette? _darkPalette;
@@ -86,8 +88,8 @@ internal static class OnAirBadgeVisuals
             ? Color.FromArgb(0xFF, 0xFF, 0x3B, 0x44)
             : Color.FromArgb(0xFF, 0xE6, 0x19, 0x24);
         var dotHaloColor = isDark
-            ? Color.FromArgb(0x78, 0xFF, 0x2E, 0x38)
-            : Color.FromArgb(0x60, 0xFF, 0x24, 0x2E);
+            ? Color.FromArgb(0xB8, 0xFF, 0x38, 0x30)
+            : Color.FromArgb(0x98, 0xFF, 0x2B, 0x26);
         var badgeBorderColor = isDark
             ? Color.FromArgb(0x68, 0xFF, 0x4D, 0x57)
             : Color.FromArgb(0x45, 0xE0, 0x1E, 0x28);
@@ -115,8 +117,8 @@ internal static class OnAirBadgeVisuals
             Color = isDark ? Color.FromArgb(0x16, 0xD9, 0x18, 0x22) : Color.FromArgb(0x0E, 0xE6, 0x19, 0x24)
         });
 
-        // Tuned slightly richer at full opacity so GlowRestOpacity (~0.72) keeps the calm rest look
-        // while allowing subtle 2-5s studio-lamp swells up to 0.92-1.00.
+        // Warm incandescent lamp aura: calm ambient glow at GlowRestOpacity (0.44)
+        // and rich crimson-red bloom when swelling toward 0.92-1.00.
         var outerGlow = new RadialGradientBrush
         {
             Center = new Point(0.5, 0.5),
@@ -127,17 +129,17 @@ internal static class OnAirBadgeVisuals
         outerGlow.GradientStops.Add(new GradientStop
         {
             Offset = 0.0,
-            Color = isDark ? Color.FromArgb(0x70, 0xFF, 0x24, 0x2E) : Color.FromArgb(0x5E, 0xFF, 0x24, 0x2E)
+            Color = isDark ? Color.FromArgb(0xA4, 0xFF, 0x3A, 0x2E) : Color.FromArgb(0x88, 0xFF, 0x2C, 0x28)
         });
         outerGlow.GradientStops.Add(new GradientStop
         {
-            Offset = 0.45,
-            Color = isDark ? Color.FromArgb(0x38, 0xFF, 0x2A, 0x34) : Color.FromArgb(0x2E, 0xFF, 0x2E, 0x36)
+            Offset = 0.36,
+            Color = isDark ? Color.FromArgb(0x5E, 0xFF, 0x2A, 0x34) : Color.FromArgb(0x4A, 0xFF, 0x2A, 0x34)
         });
         outerGlow.GradientStops.Add(new GradientStop
         {
-            Offset = 0.78,
-            Color = isDark ? Color.FromArgb(0x14, 0xFF, 0x33, 0x3B) : Color.FromArgb(0x10, 0xFF, 0x38, 0x40)
+            Offset = 0.70,
+            Color = isDark ? Color.FromArgb(0x22, 0xFF, 0x33, 0x3B) : Color.FromArgb(0x1A, 0xFF, 0x36, 0x3E)
         });
         outerGlow.GradientStops.Add(new GradientStop
         {
@@ -156,7 +158,7 @@ internal static class OnAirBadgeVisuals
 }
 
 /// <summary>
-/// Schedules subtle, non-distracting random studio-lamp glow swells every 2-5 seconds
+/// Schedules subtle, warm studio-lamp glow swells every 2-5 seconds (warm-up, brief linger, slow cool-down)
 /// while a view is loaded and playing, and cleans up immediately on unload or stop.
 /// </summary>
 internal sealed class OnAirGlowPulseController
@@ -195,11 +197,11 @@ internal sealed class OnAirGlowPulseController
             StopActiveStoryboard();
             _targets.Clear();
             _targets.AddRange(nextTargets);
-            ApplyRestOpacity();
+            ApplyRestState();
         }
         else if (_activeStoryboard is null)
         {
-            ApplyRestOpacity();
+            ApplyRestState();
         }
 
         if (!_isActive)
@@ -219,7 +221,7 @@ internal sealed class OnAirGlowPulseController
         _cycleToken++;
         _timer.Stop();
         StopActiveStoryboard();
-        ApplyRestOpacity();
+        ApplyRestState();
     }
 
     private void ScheduleNextPulse()
@@ -242,48 +244,50 @@ internal sealed class OnAirGlowPulseController
             return;
         }
 
-        StartGlowSwell();
+        StartLampGlow();
     }
 
-    private void StartGlowSwell()
+    private void StartLampGlow()
     {
         StopActiveStoryboard();
 
         var token = ++_cycleToken;
-        var peakGlow = 0.90 + (Random.Shared.NextDouble() * 0.10); // 0.90 .. 1.00
-        var peakHalo = Math.Min(1.0, peakGlow);
-        var halfDuration = TimeSpan.FromMilliseconds(650 + Random.Shared.Next(250)); // ~1.3s .. 1.8s full swell
+        var peakGlow = 0.88 + (Random.Shared.NextDouble() * 0.12); // 0.88 .. 1.00
+        var peakHalo = Math.Min(1.0, peakGlow + 0.04);
+        var peakGlowScale = 1.12 + (Random.Shared.NextDouble() * 0.06); // 1.12 .. 1.18
+        var peakHaloScale = 1.24 + (Random.Shared.NextDouble() * 0.10); // 1.24 .. 1.34
+
+        var warmUpMs = 380 + Random.Shared.Next(140);      // 380-520ms warm-up
+        var lingerMs = 260 + Random.Shared.Next(180);      // 260-440ms warm hold
+        var coolDownMs = 950 + Random.Shared.Next(350);    // 950-1300ms gentle fade back
+        var tPeak = TimeSpan.FromMilliseconds(warmUpMs);
+        var tHold = TimeSpan.FromMilliseconds(warmUpMs + lingerMs);
+        var tEnd = TimeSpan.FromMilliseconds(warmUpMs + lingerMs + coolDownMs);
 
         var sb = new Storyboard();
         foreach (var (glow, dotHalo) in _targets)
         {
             glow.Opacity = OnAirBadgeVisuals.GlowRestOpacity;
-            var glowAnim = new DoubleAnimation
-            {
-                From = OnAirBadgeVisuals.GlowRestOpacity,
-                To = peakGlow,
-                Duration = new Duration(halfDuration),
-                AutoReverse = true,
-                EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
-            };
-            Storyboard.SetTarget(glowAnim, glow);
-            Storyboard.SetTargetProperty(glowAnim, nameof(UIElement.Opacity));
-            sb.Children.Add(glowAnim);
+            var glowScale = EnsureScaleTransform(glow, OnAirBadgeVisuals.GlowRestScale);
+
+            AddLampCurve(sb, glow, nameof(UIElement.Opacity),
+                OnAirBadgeVisuals.GlowRestOpacity, peakGlow, peakGlow * 0.94, tPeak, tHold, tEnd);
+            AddLampCurve(sb, glowScale, nameof(ScaleTransform.ScaleX),
+                OnAirBadgeVisuals.GlowRestScale, peakGlowScale, peakGlowScale * 0.98, tPeak, tHold, tEnd);
+            AddLampCurve(sb, glowScale, nameof(ScaleTransform.ScaleY),
+                OnAirBadgeVisuals.GlowRestScale, peakGlowScale, peakGlowScale * 0.98, tPeak, tHold, tEnd);
 
             if (dotHalo is not null)
             {
                 dotHalo.Opacity = OnAirBadgeVisuals.DotHaloRestOpacity;
-                var haloAnim = new DoubleAnimation
-                {
-                    From = OnAirBadgeVisuals.DotHaloRestOpacity,
-                    To = peakHalo,
-                    Duration = new Duration(halfDuration),
-                    AutoReverse = true,
-                    EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
-                };
-                Storyboard.SetTarget(haloAnim, dotHalo);
-                Storyboard.SetTargetProperty(haloAnim, nameof(UIElement.Opacity));
-                sb.Children.Add(haloAnim);
+                var haloScale = EnsureScaleTransform(dotHalo, OnAirBadgeVisuals.DotHaloRestScale);
+
+                AddLampCurve(sb, dotHalo, nameof(UIElement.Opacity),
+                    OnAirBadgeVisuals.DotHaloRestOpacity, peakHalo, peakHalo * 0.94, tPeak, tHold, tEnd);
+                AddLampCurve(sb, haloScale, nameof(ScaleTransform.ScaleX),
+                    OnAirBadgeVisuals.DotHaloRestScale, peakHaloScale, peakHaloScale * 0.98, tPeak, tHold, tEnd);
+                AddLampCurve(sb, haloScale, nameof(ScaleTransform.ScaleY),
+                    OnAirBadgeVisuals.DotHaloRestScale, peakHaloScale, peakHaloScale * 0.98, tPeak, tHold, tEnd);
             }
         }
 
@@ -299,12 +303,61 @@ internal sealed class OnAirGlowPulseController
                 return;
             }
 
-            ApplyRestOpacity();
+            ApplyRestState();
             ScheduleNextPulse();
         };
 
         _activeStoryboard = sb;
         sb.Begin();
+    }
+
+    private static void AddLampCurve(
+        Storyboard sb,
+        DependencyObject target,
+        string propertyPath,
+        double restValue,
+        double peakValue,
+        double lingerValue,
+        TimeSpan tPeak,
+        TimeSpan tHold,
+        TimeSpan tEnd)
+    {
+        var anim = new DoubleAnimationUsingKeyFrames();
+        anim.KeyFrames.Add(new EasingDoubleKeyFrame
+        {
+            KeyTime = KeyTime.FromTimeSpan(tPeak),
+            Value = peakValue,
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        });
+        anim.KeyFrames.Add(new EasingDoubleKeyFrame
+        {
+            KeyTime = KeyTime.FromTimeSpan(tHold),
+            Value = lingerValue,
+            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
+        });
+        anim.KeyFrames.Add(new EasingDoubleKeyFrame
+        {
+            KeyTime = KeyTime.FromTimeSpan(tEnd),
+            Value = restValue,
+            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
+        });
+
+        Storyboard.SetTarget(anim, target);
+        Storyboard.SetTargetProperty(anim, propertyPath);
+        sb.Children.Add(anim);
+    }
+
+    private static ScaleTransform EnsureScaleTransform(UIElement element, double restScale)
+    {
+        element.RenderTransformOrigin = new Point(0.5, 0.5);
+        if (element.RenderTransform is ScaleTransform existing)
+        {
+            return existing;
+        }
+
+        var created = new ScaleTransform { ScaleX = restScale, ScaleY = restScale };
+        element.RenderTransform = created;
+        return created;
     }
 
     private void StopActiveStoryboard()
@@ -316,14 +369,21 @@ internal sealed class OnAirGlowPulseController
         }
     }
 
-    private void ApplyRestOpacity()
+    private void ApplyRestState()
     {
         foreach (var (glow, dotHalo) in _targets)
         {
             glow.Opacity = OnAirBadgeVisuals.GlowRestOpacity;
+            var glowScale = EnsureScaleTransform(glow, OnAirBadgeVisuals.GlowRestScale);
+            glowScale.ScaleX = OnAirBadgeVisuals.GlowRestScale;
+            glowScale.ScaleY = OnAirBadgeVisuals.GlowRestScale;
+
             if (dotHalo is not null)
             {
                 dotHalo.Opacity = OnAirBadgeVisuals.DotHaloRestOpacity;
+                var haloScale = EnsureScaleTransform(dotHalo, OnAirBadgeVisuals.DotHaloRestScale);
+                haloScale.ScaleX = OnAirBadgeVisuals.DotHaloRestScale;
+                haloScale.ScaleY = OnAirBadgeVisuals.DotHaloRestScale;
             }
         }
     }
