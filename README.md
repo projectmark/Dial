@@ -3,6 +3,9 @@
 Een lichtgewicht, modulaire Windows 11 internetradio-desktopapp gebouwd met **WinUI 3 (Windows App SDK)**, **.NET 10 (LTS)** en het **Microsoft Fluent 2 Design System** op basis van het **Chassis**-platform.
 
 ---
+<img width="1233" height="885" alt="image" src="https://github.com/user-attachments/assets/76fbdcbe-131a-41d2-a929-0b75caddc5f1" />
+
+---
 
 ## Functies
 
