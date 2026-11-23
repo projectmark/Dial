@@ -67,5 +67,6 @@ jobs:
           generate_release_notes: true
           files: |
             releases/latest/Dial.exe
+            releases/latest/Dial-*-win-x64.zip
             releases/latest/releases.json
             releases/latest/checksum.sha256

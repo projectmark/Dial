@@ -15,11 +15,17 @@
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+    <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
+    <Deterministic>true</Deterministic>
     <RootNamespace>Dial</RootNamespace>
     <AssemblyName>Dial</AssemblyName>
     <Product>Dial</Product>
     <AssemblyTitle>Dial</AssemblyTitle>
+    <Authors>projectmark</Authors>
+    <Company>projectmark</Company>
+    <Description>Dial - Windows Internet Radio Desktop App</Description>
+    <Copyright>Copyright (c) 2026 projectmark</Copyright>
     <RepositoryUrl>https://github.com/projectmark/Dial</RepositoryUrl>
     <ApplicationIcon>Assets\dial.ico</ApplicationIcon>
   </PropertyGroup>

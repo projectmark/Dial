@@ -1,4 +1,4 @@
-param (
+﻿param (
     [string]$Version = "",
     [string]$PreRelease = "",
     [string]$ProjectPath = "",
@@ -117,10 +117,70 @@ if (-not (Test-Path $sourceExe)) {
 $exeSizeMb = [math]::Round((Get-Item $sourceExe).Length / 1MB, 2)
 Write-Host "      -> Succesvol gegenereerd: $exeSizeMb MB" -ForegroundColor Green
 
-# 6. Bereken SHA256 Checksum
-Write-Host "`n[2/4] Berekenen van SHA256 checksum..." -ForegroundColor Yellow
+# 6. Bereken SHA256 Checksum & bouw deelbare .zip
+Write-Host "`n[2/4] Berekenen van SHA256 checksum & verpakken van .zip..." -ForegroundColor Yellow
 $hash = (Get-FileHash -Path $sourceExe -Algorithm SHA256).Hash.ToLowerInvariant()
-Write-Host "      SHA256: $hash" -ForegroundColor Green
+Write-Host "      EXE SHA256: $hash" -ForegroundColor Green
+
+$ZipFileName = "$AppName-v$FullInfoVersion-win-x64.zip"
+$ZipStageDir = Join-Path $TempPublishDir "zip_stage"
+$TempZipPath = Join-Path $TempPublishDir $ZipFileName
+New-Item -ItemType Directory -Force -Path $ZipStageDir | Out-Null
+
+Copy-Item $sourceExe -Destination (Join-Path $ZipStageDir "$AppName.exe") -Force
+[System.IO.File]::WriteAllText(
+    (Join-Path $ZipStageDir "checksum.sha256"),
+    "$hash *$AppName.exe`n",
+    [System.Text.UTF8Encoding]::new($false)
+)
+
+$readmeContent = @"
+$AppName v$FullInfoVersion - Start- en uitpakinstructies (NL / EN)
+====================================================================
+
+[Nederlands]
+1. Pak eerst de volledige .zip uit naar een gewone map (rechtermuisklik -> Alles uitpakken...).
+   Start $AppName.exe niet rechtstreeks vanuit het geopende .zip-venster.
+2. Zie je een Windows SmartScreen-melding ("Windows heeft uw pc beschermd")?
+   - Klik op "Meer informatie" -> "Toch uitvoeren".
+   - Tip vooraf: klik vóór het uitpakken met rechts op het .zip-bestand -> Eigenschappen ->
+     vink "Blokkering opheffen" aan -> Toepassen (of in PowerShell: Unblock-File .\$ZipFileName).
+3. Optionele integriteitscontrole (PowerShell):
+   Get-FileHash .\$AppName.exe -Algorithm SHA256
+   Verwachte SHA256: $hash
+
+[English]
+1. Extract the entire .zip archive to a normal folder first (Right-click -> Extract All...).
+   Do not launch $AppName.exe directly from inside the zip preview window.
+2. If Windows SmartScreen shows "Windows protected your PC":
+   - Click "More info" -> "Run anyway".
+   - Tip beforehand: right-click the .zip file -> Properties -> check "Unblock" -> Apply
+     (or in PowerShell: Unblock-File .\$ZipFileName).
+3. Optional integrity check (PowerShell):
+   Get-FileHash .\$AppName.exe -Algorithm SHA256
+   Expected SHA256: $hash
+"@
+[System.IO.File]::WriteAllText(
+    (Join-Path $ZipStageDir "LEESMIJ-STARTEN.txt"),
+    $readmeContent,
+    [System.Text.UTF8Encoding]::new($true)
+)
+
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+if (Test-Path $TempZipPath) {
+    Remove-Item -Force $TempZipPath
+}
+[System.IO.Compression.ZipFile]::CreateFromDirectory(
+    $ZipStageDir,
+    $TempZipPath,
+    [System.IO.Compression.CompressionLevel]::Optimal,
+    $false
+)
+
+$zipSizeMb = [math]::Round((Get-Item $TempZipPath).Length / 1MB, 2)
+$zipHash = (Get-FileHash -Path $TempZipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+Write-Host "      ZIP       : $ZipFileName ($zipSizeMb MB)" -ForegroundColor Green
+Write-Host "      ZIP SHA256: $zipHash" -ForegroundColor Green
 
 # 7. Genereer releases.json manifest (met GitHub Release URL indien RepositoryUrl of DownloadBaseUrl aanwezig is)
 $repoUrl = ($CsprojXml.Project.PropertyGroup.RepositoryUrl | Where-Object { $_ } | Select-Object -First 1)
@@ -159,25 +219,32 @@ $releaseManifest = [ordered]@{
     appBinary       = "$AppName.exe"
     fileSizeMb      = $exeSizeMb
     sha256          = $hash
+    zipFileName     = $ZipFileName
+    zipFileSizeMb   = $zipSizeMb
+    zipSha256       = $zipHash
     downloadUrl     = $resolvedDownloadUrl
     releaseNotesUrl = $resolvedNotesUrl
     mandatory       = $false
 }
 
 $manifestJson = $releaseManifest | ConvertTo-Json -Depth 5
+$checksumText = "$hash *$ReleaseExeName`n$hash *$AppName.exe`n$zipHash *$ZipFileName`n"
 
 # 8. Distribueer naar releases/v<Version>/ en releases/latest/
 Write-Host "`n[3/4] Distribueren naar versie-map ($VersionDir)..." -ForegroundColor Yellow
 Copy-Item $sourceExe -Destination (Join-Path $VersionDir "$AppName.exe") -Force
 Copy-Item $sourceExe -Destination (Join-Path $VersionDir $ReleaseExeName) -Force
-$manifestJson | Set-Content (Join-Path $VersionDir "releases.json") -Encoding utf8
-"$hash *$ReleaseExeName`n$hash *$AppName.exe" | Set-Content (Join-Path $VersionDir "checksum.sha256") -Encoding utf8
+Copy-Item $TempZipPath -Destination (Join-Path $VersionDir $ZipFileName) -Force
+[System.IO.File]::WriteAllText((Join-Path $VersionDir "releases.json"), $manifestJson, [System.Text.UTF8Encoding]::new($false))
+[System.IO.File]::WriteAllText((Join-Path $VersionDir "checksum.sha256"), $checksumText, [System.Text.UTF8Encoding]::new($false))
 
 Write-Host "`n[4/4] Bijwerken van releases/latest/ map..." -ForegroundColor Yellow
+Get-ChildItem -Path $LatestDir -Filter "$AppName-v*-win-x64.zip" -ErrorAction SilentlyContinue | Remove-Item -Force
 Copy-Item $sourceExe -Destination (Join-Path $LatestDir "$AppName.exe") -Force
 Copy-Item $sourceExe -Destination (Join-Path $LatestDir $ReleaseExeName) -Force
-$manifestJson | Set-Content (Join-Path $LatestDir "releases.json") -Encoding utf8
-"$hash *$ReleaseExeName`n$hash *$AppName.exe" | Set-Content (Join-Path $LatestDir "checksum.sha256") -Encoding utf8
+Copy-Item $TempZipPath -Destination (Join-Path $LatestDir $ZipFileName) -Force
+[System.IO.File]::WriteAllText((Join-Path $LatestDir "releases.json"), $manifestJson, [System.Text.UTF8Encoding]::new($false))
+[System.IO.File]::WriteAllText((Join-Path $LatestDir "checksum.sha256"), $checksumText, [System.Text.UTF8Encoding]::new($false))
 
 Remove-Item -Recurse -Force $TempPublishDir -ErrorAction SilentlyContinue
 
@@ -185,4 +252,5 @@ Write-Host "`n=============================================" -ForegroundColor Gr
 Write-Host " Release v$FullInfoVersion succesvol voltooid!" -ForegroundColor Green
 Write-Host " Release Exe : $LatestDir\$ReleaseExeName" -ForegroundColor Cyan
 Write-Host " App Exe     : $LatestDir\$AppName.exe" -ForegroundColor Cyan
+Write-Host " Share Zip   : $LatestDir\$ZipFileName" -ForegroundColor Cyan
 Write-Host "=============================================" -ForegroundColor Green

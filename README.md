@@ -97,7 +97,9 @@ dotnet build Dial.slnx -c Release
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build-release.ps1
 ```
-De gegenereerde standalone executable wordt inclusief `checksum.sha256` en `releases.json` geplaatst in `releases/v<Versie>/` en `releases/latest/Dial.exe`.
+De gegenereerde standalone executable wordt inclusief een deelbaar `.zip`-pakket (`Dial-v<Versie>-win-x64.zip`), `checksum.sha256` en `releases.json` geplaatst in `releases/v<Versie>/` en `releases/latest/`.
+
+> **Delen op andere Windows-pc's:** omdat de `.exe` niet digitaal ondertekend is met een betaald Code Signing-certificaat, zit er in de `.zip` een `LEESMIJ-STARTEN.txt` met uitpak-, SmartScreen- en SHA256-instructies. Pak altijd eerst de volledige `.zip` uit (of kies *Eigenschappen → Blokkering opheffen* op het `.zip`-bestand vóór het uitpakken).
 
 ---
 
