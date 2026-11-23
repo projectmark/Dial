@@ -264,6 +264,17 @@ public sealed partial class App : Application
         var changelog = Services.GetRequiredService<IChangelogService>();
         changelog.RegisterRelease(new ChangelogRelease(
             Version: AppVersion.InformationalVersion,
+            ReleaseDate: new DateTime(2026, 11, 23),
+            Changes: new ChangelogChange[]
+            {
+                new ChangelogChange("Added", "Changelog.v013Alpha.AddedTrayClickToggle"),
+                new ChangelogChange("Changed", "Changelog.v013Alpha.ChangedShareableZipAndAppInfo"),
+                new ChangelogChange("Fixed", "Changelog.v013Alpha.FixedTrayRestoreFlashAndLazyStartup")
+            },
+            IsLatest: true));
+
+        changelog.RegisterRelease(new ChangelogRelease(
+            Version: "0.1.2-alpha",
             ReleaseDate: new DateTime(2026, 11, 22),
             Changes: new ChangelogChange[]
             {
@@ -271,7 +282,7 @@ public sealed partial class App : Application
                 new ChangelogChange("Added", "Changelog.v012Alpha.AddedUpdateAndWhatsNewModals"),
                 new ChangelogChange("Changed", "Changelog.v012Alpha.ChangedReleaseManifestPipeline")
             },
-            IsLatest: true));
+            IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
             Version: "0.1.1-alpha",
