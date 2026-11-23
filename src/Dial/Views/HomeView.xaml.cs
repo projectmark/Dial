@@ -66,6 +66,7 @@ public sealed partial class HomeView : UserControl
     private readonly ISettingsService _settings;
     private readonly ILocalizationService _localization;
     private readonly ThemeManager _theme;
+    private readonly OnAirGlowPulseController _glowPulse;
     private readonly List<StationRowVisual> _stationVisuals = [];
     private readonly List<EditRowVisual> _editRowVisuals = [];
     private readonly List<(int Minutes, Button Button)> _sleepPresetButtons = [];
@@ -106,6 +107,7 @@ public sealed partial class HomeView : UserControl
         _settings = App.Services.GetRequiredService<ISettingsService>();
         _localization = App.Services.GetRequiredService<ILocalizationService>();
         _theme = App.Services.GetRequiredService<ThemeManager>();
+        _glowPulse = new OnAirGlowPulseController(DispatcherQueue, () => _settings.Current.AnimationsEnabled);
 
         _theme.BindInteractiveButton(PrevStationBtn, () => false);
         _theme.BindInteractiveButton(PlayPauseBtn, () => _player.Current.State is RadioPlaybackState.Playing or RadioPlaybackState.Buffering);
@@ -193,6 +195,8 @@ public sealed partial class HomeView : UserControl
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
+        _glowPulse.Stop();
+
         if (_isStickyCompositionActive)
         {
             _editToolbarVisual?.StopAnimation("Translation");
@@ -287,6 +291,7 @@ public sealed partial class HomeView : UserControl
             else
             {
                 UpdateTrackLookupButton(_player.Current);
+                UpdateGlowPulseState(_player.Current);
             }
         });
 
@@ -1184,6 +1189,37 @@ public sealed partial class HomeView : UserControl
         {
             SelectionHintText.Foreground = secondary;
             SyncEditSelectionVisuals();
+        }
+
+        UpdateGlowPulseState(snapshot);
+    }
+
+    private void UpdateGlowPulseState(RadioStateSnapshot snapshot)
+    {
+        if (!_isSubscribed || snapshot.State != RadioPlaybackState.Playing)
+        {
+            _glowPulse.Update(isLiveAndVisible: false, CollectActiveGlowTargets(snapshot));
+            return;
+        }
+
+        _glowPulse.Update(isLiveAndVisible: true, CollectActiveGlowTargets(snapshot));
+    }
+
+    private IEnumerable<(UIElement Glow, UIElement? DotHalo)> CollectActiveGlowTargets(RadioStateSnapshot snapshot)
+    {
+        yield return (StatusBadgeGlow, StatusDotHalo);
+
+        if (!snapshot.IsPreview && snapshot.ActiveStation is { } activeStation)
+        {
+            foreach (var item in _stationVisuals)
+            {
+                if (item.MetaGlow is not null &&
+                    string.Equals(item.Station.Id, activeStation.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    yield return (item.MetaGlow, item.MetaDotHalo);
+                    break;
+                }
+            }
         }
     }
 

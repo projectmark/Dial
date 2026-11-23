@@ -23,6 +23,7 @@ public sealed partial class MiniPlayerView : UserControl
     private readonly ILocalizationService _localization;
     private readonly ThemeManager _theme;
     private readonly DispatcherQueueTimer _vuTimer;
+    private readonly OnAirGlowPulseController _glowPulse;
 
     private bool _isSubscribed;
     private bool _isSyncingVolume;
@@ -47,6 +48,7 @@ public sealed partial class MiniPlayerView : UserControl
         _vuTimer = DispatcherQueue.CreateTimer();
         _vuTimer.Interval = TimeSpan.FromMilliseconds(16);
         _vuTimer.Tick += OnVuTimerTick;
+        _glowPulse = new OnAirGlowPulseController(DispatcherQueue, () => _settings.Current.AnimationsEnabled);
 
         _theme.BindInteractiveButton(PrevBtn, () => false);
         _theme.BindInteractiveButton(PlayPauseBtn, () => _player.Current.State is RadioPlaybackState.Playing or RadioPlaybackState.Buffering);
@@ -84,6 +86,7 @@ public sealed partial class MiniPlayerView : UserControl
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         _vuTimer.Stop();
+        _glowPulse.Stop();
         if (_isSubscribed)
         {
             _player.StateChanged -= OnPlayerStateChanged;
@@ -164,6 +167,7 @@ public sealed partial class MiniPlayerView : UserControl
             if (_isSubscribed)
             {
                 UpdateTrackLookupButton(_player.Current);
+                UpdateGlowPulseState(_player.Current);
             }
         });
 
@@ -274,7 +278,13 @@ public sealed partial class MiniPlayerView : UserControl
         _theme.RefreshInteractiveButton(MuteBtn);
         _theme.RefreshInteractiveButton(PinBtn);
         _theme.RefreshInteractiveButton(ExpandBtn);
+        UpdateGlowPulseState(snapshot);
     }
+
+    private void UpdateGlowPulseState(RadioStateSnapshot snapshot)
+        => _glowPulse.Update(
+            isLiveAndVisible: _isSubscribed && snapshot.State == RadioPlaybackState.Playing,
+            new (UIElement Glow, UIElement? DotHalo)[] { (StatusBadgeGlow, StatusDotHalo) });
 
     private void UpdateSleepReadout(TimeSpan? remaining)
     {
