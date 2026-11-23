@@ -268,6 +268,7 @@ public sealed partial class App : Application
             Changes: new ChangelogChange[]
             {
                 new ChangelogChange("Added", "Changelog.v013Alpha.AddedTrayClickToggle"),
+                new ChangelogChange("Added", "Changelog.v013Alpha.AddedMiniPlayerOnAirBadge"),
                 new ChangelogChange("Changed", "Changelog.v013Alpha.ChangedShareableZipAndAppInfo"),
                 new ChangelogChange("Fixed", "Changelog.v013Alpha.FixedTrayRestoreFlashAndLazyStartup")
             },

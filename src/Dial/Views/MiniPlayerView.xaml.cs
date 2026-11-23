@@ -222,13 +222,16 @@ public sealed partial class MiniPlayerView : UserControl
         StationTitle.Text = snapshot.ActiveStation?.Name ?? _localization["Radio.NoStationSelected"];
         StationTitle.Foreground = primary;
 
-        StatusDot.Fill = snapshot.State switch
-        {
-            RadioPlaybackState.Playing => _theme.GetSuccessBrush(),
-            RadioPlaybackState.Buffering => _theme.GetCautionBrush(),
-            RadioPlaybackState.Error => _theme.GetCriticalBrush(),
-            _ => secondary
-        };
+        OnAirBadgeVisuals.ApplyStatusBadge(
+            StatusBadgeGlow,
+            StatusBadge,
+            StatusDotHalo,
+            StatusDot,
+            StatusBadgeText,
+            snapshot.State,
+            _theme,
+            _localization,
+            secondary);
 
         if (snapshot.State == RadioPlaybackState.Error && !string.IsNullOrWhiteSpace(snapshot.ErrorMessage))
         {

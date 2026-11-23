@@ -45,14 +45,6 @@ public sealed partial class HomeView : UserControl
         Border? IconBox,
         FontIcon? IconGlyph);
 
-    private sealed record OnAirStudioPalette(
-        SolidColorBrush TextBrush,
-        SolidColorBrush DotCoreBrush,
-        SolidColorBrush DotHaloBrush,
-        SolidColorBrush BadgeBorderBrush,
-        RadialGradientBrush BadgeBgBrush,
-        RadialGradientBrush OuterGlowBrush);
-
     private sealed record EditRowVisual(
         string StationId,
         int Index,
@@ -99,8 +91,6 @@ public sealed partial class HomeView : UserControl
     private bool _isEditMode;
     private bool _isSingleColumn;
     private bool _isCompactTransport;
-    private OnAirStudioPalette? _lightOnAirPalette;
-    private OnAirStudioPalette? _darkOnAirPalette;
     private SolidColorBrush? _transparentBrush;
     private SolidColorBrush? _lightEditToolbarBrush;
     private SolidColorBrush? _darkEditToolbarBrush;
@@ -908,86 +898,6 @@ public sealed partial class HomeView : UserControl
         return (container, glow, badge, dotGrid, dotHalo, dotCore, metaText);
     }
 
-    private OnAirStudioPalette GetOnAirStudioPalette()
-        => _theme.IsDarkTheme
-            ? (_darkOnAirPalette ??= CreateOnAirStudioPalette(isDark: true))
-            : (_lightOnAirPalette ??= CreateOnAirStudioPalette(isDark: false));
-
-    private static OnAirStudioPalette CreateOnAirStudioPalette(bool isDark)
-    {
-        var textColor = isDark
-            ? Color.FromArgb(0xFF, 0xFF, 0x5C, 0x64)
-            : Color.FromArgb(0xFF, 0xCC, 0x14, 0x1D);
-        var dotCoreColor = isDark
-            ? Color.FromArgb(0xFF, 0xFF, 0x3B, 0x44)
-            : Color.FromArgb(0xFF, 0xE6, 0x19, 0x24);
-        var dotHaloColor = isDark
-            ? Color.FromArgb(0x58, 0xFF, 0x2E, 0x38)
-            : Color.FromArgb(0x45, 0xFF, 0x24, 0x2E);
-        var badgeBorderColor = isDark
-            ? Color.FromArgb(0x68, 0xFF, 0x4D, 0x57)
-            : Color.FromArgb(0x45, 0xE0, 0x1E, 0x28);
-
-        var badgeBg = new RadialGradientBrush
-        {
-            Center = new Point(0.5, 0.5),
-            GradientOrigin = new Point(0.5, 0.5),
-            RadiusX = 0.65,
-            RadiusY = 0.75
-        };
-        badgeBg.GradientStops.Add(new GradientStop
-        {
-            Offset = 0.0,
-            Color = isDark ? Color.FromArgb(0x36, 0xFF, 0x29, 0x34) : Color.FromArgb(0x26, 0xFF, 0x2A, 0x32)
-        });
-        badgeBg.GradientStops.Add(new GradientStop
-        {
-            Offset = 0.7,
-            Color = isDark ? Color.FromArgb(0x22, 0xFF, 0x24, 0x2E) : Color.FromArgb(0x16, 0xFF, 0x2A, 0x32)
-        });
-        badgeBg.GradientStops.Add(new GradientStop
-        {
-            Offset = 1.0,
-            Color = isDark ? Color.FromArgb(0x16, 0xD9, 0x18, 0x22) : Color.FromArgb(0x0E, 0xE6, 0x19, 0x24)
-        });
-
-        var outerGlow = new RadialGradientBrush
-        {
-            Center = new Point(0.5, 0.5),
-            GradientOrigin = new Point(0.5, 0.5),
-            RadiusX = 0.5,
-            RadiusY = 0.5
-        };
-        outerGlow.GradientStops.Add(new GradientStop
-        {
-            Offset = 0.0,
-            Color = isDark ? Color.FromArgb(0x54, 0xFF, 0x24, 0x2E) : Color.FromArgb(0x46, 0xFF, 0x24, 0x2E)
-        });
-        outerGlow.GradientStops.Add(new GradientStop
-        {
-            Offset = 0.45,
-            Color = isDark ? Color.FromArgb(0x2A, 0xFF, 0x2A, 0x34) : Color.FromArgb(0x22, 0xFF, 0x2E, 0x36)
-        });
-        outerGlow.GradientStops.Add(new GradientStop
-        {
-            Offset = 0.78,
-            Color = isDark ? Color.FromArgb(0x0E, 0xFF, 0x33, 0x3B) : Color.FromArgb(0x0B, 0xFF, 0x38, 0x40)
-        });
-        outerGlow.GradientStops.Add(new GradientStop
-        {
-            Offset = 1.0,
-            Color = Color.FromArgb(0x00, 0xFF, 0x38, 0x40)
-        });
-
-        return new OnAirStudioPalette(
-            TextBrush: new SolidColorBrush(textColor),
-            DotCoreBrush: new SolidColorBrush(dotCoreColor),
-            DotHaloBrush: new SolidColorBrush(dotHaloColor),
-            BadgeBorderBrush: new SolidColorBrush(badgeBorderColor),
-            BadgeBgBrush: badgeBg,
-            OuterGlowBrush: outerGlow);
-    }
-
     private Button CreateIconActionButton(string glyph, string tooltip, bool isEnabled, Func<Task> action)
     {
         var btn = new Button
@@ -1103,40 +1013,19 @@ public sealed partial class HomeView : UserControl
         HeroIconBox.Background = accentTint;
         HeroIconBox.BorderBrush = accent;
 
-        var onAir = GetOnAirStudioPalette();
+        var onAir = OnAirBadgeVisuals.GetPalette(_theme.IsDarkTheme);
         var transparent = _transparentBrush ??= new SolidColorBrush(Colors.Transparent);
 
-        if (snapshot.State == RadioPlaybackState.Playing)
-        {
-            StatusBadgeText.Text = _localization["Radio.Status.Live"];
-            StatusBadgeText.CharacterSpacing = 45;
-            StatusBadgeText.Foreground = onAir.TextBrush;
-            StatusDot.Fill = onAir.DotCoreBrush;
-            StatusDotHalo.Fill = onAir.DotHaloBrush;
-            StatusDotHalo.Visibility = Visibility.Visible;
-            StatusBadge.BorderBrush = onAir.BadgeBorderBrush;
-            StatusBadge.Background = onAir.BadgeBgBrush;
-            StatusBadgeGlow.Background = onAir.OuterGlowBrush;
-            StatusBadgeGlow.Visibility = Visibility.Visible;
-        }
-        else
-        {
-            var (statusLabel, statusBrush) = snapshot.State switch
-            {
-                RadioPlaybackState.Buffering => (_localization["Radio.Status.Buffering"], _theme.GetCautionBrush()),
-                RadioPlaybackState.Error => (_localization["Radio.Status.Error"], _theme.GetCriticalBrush()),
-                _ => (_localization["Radio.Status.Stopped"], secondary)
-            };
-
-            StatusBadgeText.Text = statusLabel;
-            StatusBadgeText.CharacterSpacing = 0;
-            StatusBadgeText.Foreground = statusBrush;
-            StatusDot.Fill = statusBrush;
-            StatusDotHalo.Visibility = Visibility.Collapsed;
-            StatusBadge.BorderBrush = statusBrush;
-            StatusBadge.Background = _theme.GetCardBackgroundBrush();
-            StatusBadgeGlow.Visibility = Visibility.Collapsed;
-        }
+        OnAirBadgeVisuals.ApplyStatusBadge(
+            StatusBadgeGlow,
+            StatusBadge,
+            StatusDotHalo,
+            StatusDot,
+            StatusBadgeText,
+            snapshot.State,
+            _theme,
+            _localization,
+            secondary);
 
         PreviewBadge.Visibility = snapshot.IsPreview ? Visibility.Visible : Visibility.Collapsed;
         PreviewBadge.BorderBrush = accent;
