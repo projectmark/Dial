@@ -19,6 +19,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
 using Windows.System;
 using WinRT.Interop;
@@ -441,8 +442,13 @@ public sealed partial class MainWindow : Window
     private const uint SwpNosize = 0x0001;
     private const uint SwpNomove = 0x0002;
     private const uint SwpShowWindow = 0x0040;
+    private const int DwmwaCloak = 13;
     private static readonly IntPtr HwndTopmost = new(-1);
     private static readonly IntPtr HwndNottopmost = new(-2);
+
+    private int _restoreSerial;
+    private EventHandler<object>? _pendingRevealRenderHandler;
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _pendingRevealTimer;
 
     public void ToggleVisibilityFromTray() => ToggleVisibility();
 
@@ -478,6 +484,8 @@ public sealed partial class MainWindow : Window
 
     public void CollapseToTray(bool showNotification)
     {
+        CancelPendingReveal();
+
         if (_isCollapsedToTray)
         {
             return;
@@ -487,6 +495,7 @@ public sealed partial class MainWindow : Window
         ContentHost.Content = null;
         _viewCache.Clear();
         _appWindow?.Hide();
+        SetWindowCloaked(false);
         GC.Collect(1, GCCollectionMode.Forced, blocking: false);
 
         if (showNotification && _settings.Current.ShowTrayNotifications && !_trayNoticeShown)
@@ -500,7 +509,36 @@ public sealed partial class MainWindow : Window
 
     public void RestoreFromTrayOrActivate()
     {
+        var wasHiddenOrMinimized = IsWindowHiddenOrMinimized();
         _isCollapsedToTray = false;
+        CancelPendingReveal();
+
+        // Populate the XAML view BEFORE revealing the HWND so the unloaded UI isn't rebuilt after Show().
+        if (_isMiniPlayerMode)
+        {
+            if (ContentHost.Content is not MiniPlayerView)
+            {
+                ContentHost.Content = new MiniPlayerView();
+            }
+
+            ApplyMiniAlwaysOnTop();
+        }
+        else if (ContentHost.Content is null)
+        {
+            NavigateTo(_activeNavId);
+        }
+
+        if (!wasHiddenOrMinimized)
+        {
+            BringWindowToFrontOnTop();
+            TriggerStartupFlowsIfPending();
+            return;
+        }
+
+        // Cloak the window via DWM while WinUI renders its initial frame (titlebar + Mica Alt + view)
+        // so Windows never paints an unrendered white HWND frame on restore.
+        var cloaked = SetWindowCloaked(true);
+
         if (_appWindow is not null)
         {
             if (_appWindow.Presenter is OverlappedPresenter presenter &&
@@ -512,18 +550,86 @@ public sealed partial class MainWindow : Window
             _appWindow.Show();
         }
 
-        if (_isMiniPlayerMode)
+        if (!cloaked)
         {
-            ContentHost.Content = new MiniPlayerView();
-            ApplyMiniAlwaysOnTop();
-        }
-        else
-        {
-            NavigateTo(_activeNavId);
+            BringWindowToFrontOnTop();
+            TriggerStartupFlowsIfPending();
+            return;
         }
 
-        BringWindowToFrontOnTop();
-        TriggerStartupFlowsIfPending();
+        var serial = ++_restoreSerial;
+        var layoutCompleted = false;
+        var postLayoutRenderTicks = 0;
+
+        void CompleteReveal()
+        {
+            if (serial != _restoreSerial || _isCollapsedToTray)
+            {
+                return;
+            }
+
+            CancelPendingReveal();
+            SetWindowCloaked(false);
+            BringWindowToFrontOnTop();
+            TriggerStartupFlowsIfPending();
+        }
+
+        // Wait until XAML finishes layout (Low priority) and submits 2 Composition frames before uncloaking.
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            if (serial == _restoreSerial && !_isCollapsedToTray)
+            {
+                layoutCompleted = true;
+            }
+        });
+
+        _pendingRevealRenderHandler = (_, _) =>
+        {
+            if (!layoutCompleted)
+            {
+                return;
+            }
+
+            postLayoutRenderTicks++;
+            if (postLayoutRenderTicks >= 2)
+            {
+                CompleteReveal();
+            }
+        };
+        CompositionTarget.Rendering += _pendingRevealRenderHandler;
+
+        _pendingRevealTimer = DispatcherQueue.CreateTimer();
+        _pendingRevealTimer.Interval = TimeSpan.FromMilliseconds(160);
+        _pendingRevealTimer.IsRepeating = false;
+        _pendingRevealTimer.Tick += (_, _) => CompleteReveal();
+        _pendingRevealTimer.Start();
+    }
+
+    private void CancelPendingReveal()
+    {
+        _restoreSerial++;
+        if (_pendingRevealRenderHandler is not null)
+        {
+            CompositionTarget.Rendering -= _pendingRevealRenderHandler;
+            _pendingRevealRenderHandler = null;
+        }
+
+        if (_pendingRevealTimer is not null)
+        {
+            _pendingRevealTimer.Stop();
+            _pendingRevealTimer = null;
+        }
+    }
+
+    private bool SetWindowCloaked(bool cloak)
+    {
+        if (_hwnd == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        var value = cloak ? 1 : 0;
+        return DwmSetWindowAttribute(_hwnd, DwmwaCloak, ref value, sizeof(int)) == 0;
     }
 
     private void BringWindowToFrontOnTop()
@@ -909,6 +1015,9 @@ public sealed partial class MainWindow : Window
 
     private void OnWindowClosed(object sender, WindowEventArgs args)
     {
+        CancelPendingReveal();
+        SetWindowCloaked(false);
+
         if (_appWindow is not null)
         {
             _appWindow.Changed -= OnAppWindowChanged;
@@ -1028,6 +1137,9 @@ public sealed partial class MainWindow : Window
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool BringWindowToTop(IntPtr hWnd);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
     [DllImport("comctl32.dll")]
     private static extern bool SetWindowSubclass(IntPtr hWnd, SubclassProc pfnSubclass, nuint uIdSubclass, IntPtr dwRefData);
