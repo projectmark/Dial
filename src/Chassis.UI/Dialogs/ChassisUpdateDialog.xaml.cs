@@ -10,7 +10,7 @@ using Microsoft.UI.Xaml.Controls;
 namespace Chassis.UI.Dialogs;
 
 /// <summary>
-/// Layer 2 Acrylic update confirmation and SHA256-verified self-installer dialog.
+/// Layer 2 Acrylic update confirmation and SHA256-verified package downloader/extractor dialog.
 /// </summary>
 public sealed partial class ChassisUpdateDialog : ContentDialog
 {
@@ -20,11 +20,11 @@ public sealed partial class ChassisUpdateDialog : ContentDialog
     private readonly UpdateManifest _manifest;
     private readonly string _currentVersion;
     private readonly Action<string> _onBeforeRestart;
-    private readonly Action _onRequestExit;
-    private readonly bool _canSelfOverwrite;
+    private readonly bool _canDownload;
 
     private CancellationTokenSource? _downloadCts;
     private bool _isInstalling;
+    private bool _completed;
 
     public ChassisUpdateDialog(
         IUpdateService updates,
@@ -32,7 +32,7 @@ public sealed partial class ChassisUpdateDialog : ContentDialog
         ThemeManager theme,
         UpdateCheckResult checkResult,
         Action<string> onBeforeRestart,
-        Action onRequestExit)
+        Action? onRequestExit = null)
     {
         ArgumentNullException.ThrowIfNull(updates);
         ArgumentNullException.ThrowIfNull(localization);
@@ -40,7 +40,7 @@ public sealed partial class ChassisUpdateDialog : ContentDialog
         ArgumentNullException.ThrowIfNull(checkResult);
         ArgumentNullException.ThrowIfNull(checkResult.Manifest);
         ArgumentNullException.ThrowIfNull(onBeforeRestart);
-        ArgumentNullException.ThrowIfNull(onRequestExit);
+        _ = onRequestExit;
 
         _updates = updates;
         _localization = localization;
@@ -48,8 +48,7 @@ public sealed partial class ChassisUpdateDialog : ContentDialog
         _manifest = checkResult.Manifest;
         _currentVersion = checkResult.CurrentVersion;
         _onBeforeRestart = onBeforeRestart;
-        _onRequestExit = onRequestExit;
-        _canSelfOverwrite = _updates.CanOverwriteCurrentExecutable(out _);
+        _canDownload = !string.IsNullOrWhiteSpace(_manifest.DownloadUrl);
 
         InitializeComponent();
         ApplyLocalizationAndTheme();
@@ -83,7 +82,7 @@ public sealed partial class ChassisUpdateDialog : ContentDialog
             _theme.BindInteractiveButton(ReleaseNotesBtn, () => false);
         }
 
-        if (_canSelfOverwrite)
+        if (_canDownload)
         {
             PrimaryButtonText = _localization["Updates.Dialog.InstallNow"];
             IsPrimaryButtonEnabled = true;
@@ -123,7 +122,7 @@ public sealed partial class ChassisUpdateDialog : ContentDialog
 
     private async void ContentDialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
     {
-        if (!_canSelfOverwrite || _isInstalling)
+        if (!_canDownload || _isInstalling || _completed)
         {
             return;
         }
@@ -160,17 +159,34 @@ public sealed partial class ChassisUpdateDialog : ContentDialog
             ProgressStatusText.Text = _localization["Updates.Dialog.Installing"];
             DownloadProgressBar.IsIndeterminate = true;
 
-            _onBeforeRestart(_manifest.Version);
-
-            if (_updates.ApplyUpdateAndRestart(stagedPath, _manifest.Sha256))
+            string targetFolder;
+            if (stagedPath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
             {
-                _onRequestExit();
-                return;
+                targetFolder = _updates.ExtractVerifiedPackage(stagedPath, _manifest.Sha256, _manifest.Version);
+            }
+            else
+            {
+                targetFolder = Path.GetDirectoryName(stagedPath) ?? stagedPath;
             }
 
+            try
+            {
+                _updates.OpenExtractedUpdateFolder(targetFolder);
+            }
+            catch
+            {
+                // Opening Explorer is best-effort; the extracted path is still shown below.
+            }
+
+            _onBeforeRestart(_manifest.Version);
+
+            DownloadProgressBar.IsIndeterminate = false;
+            DownloadProgressBar.Value = 100;
+            _completed = true;
+
             args.Cancel = true;
-            NoticeBlock.Text = _localization["Updates.Dialog.Failed"];
-            NoticeBlock.Foreground = _theme.GetCriticalBrush();
+            NoticeBlock.Text = _localization.GetString("Updates.Dialog.ExtractedSuccess", targetFolder);
+            NoticeBlock.Foreground = _theme.GetSuccessBrush();
             NoticeBlock.Visibility = Visibility.Visible;
         }
         catch (OperationCanceledException)
@@ -189,7 +205,7 @@ public sealed partial class ChassisUpdateDialog : ContentDialog
             _downloadCts = null;
             cts.Dispose();
             _isInstalling = false;
-            IsPrimaryButtonEnabled = _canSelfOverwrite;
+            IsPrimaryButtonEnabled = _canDownload && !_completed;
             deferral.Complete();
         }
     }

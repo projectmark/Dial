@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -62,7 +63,7 @@ public sealed class DiagnosticsAndUpdateTests : IDisposable
     }
 
     [Fact]
-    public async Task UpdateService_DetectsVersionsVerifiesShaAndStagesScript()
+    public async Task UpdateService_DetectsVersionsVerifiesShaAndExtractsPackageSafely()
     {
         AppVersion.SetEntryAssemblyOverride(typeof(DiagnosticsAndUpdateTests).Assembly);
         var paths = new PathService(_tempRoot);
@@ -73,7 +74,7 @@ public sealed class DiagnosticsAndUpdateTests : IDisposable
         await File.WriteAllTextAsync(manifestPath, """
             {
               "version": "99.0.0",
-              "downloadUrl": "https://example.invalid/app.exe",
+              "downloadUrl": "https://example.invalid/Dial-v99.0.0-win-x64.zip",
               "sha256": "deadbeef"
             }
             """);
@@ -82,24 +83,46 @@ public sealed class DiagnosticsAndUpdateTests : IDisposable
         Assert.True(check.IsUpdateAvailable);
         Assert.Equal("99.0.0", check.LatestVersion);
 
-        var stagedExe = Path.Combine(_tempRoot, "new.exe");
-        var unicodeDir = Path.Combine(_tempRoot, "Café_Üser");
-        Directory.CreateDirectory(unicodeDir);
-        var targetExe = Path.Combine(unicodeDir, "current.exe");
-        await File.WriteAllBytesAsync(stagedExe, [1, 2, 3, 4]);
-        var validSha = Convert.ToHexString(SHA256.HashData([1, 2, 3, 4]));
+        // 1. Valid ZIP package extracts cleanly into Unicode destination and deletes staged zip
+        var stagedZip = Path.Combine(_tempRoot, "valid.zip");
+        CreateTestZip(stagedZip, new Dictionary<string, string>
+        {
+            ["Dial.exe"] = "small-apphost",
+            ["Dial.dll"] = "managed-assembly",
+            ["Assets/Locales/nl-NL.json"] = "{}"
+        });
+        var validSha = ComputeSha256(stagedZip);
 
-        Assert.True(updates.VerifyPayloadHash(stagedExe, validSha));
-        Assert.False(updates.VerifyPayloadHash(stagedExe, "0000"));
+        Assert.True(updates.VerifyPayloadHash(stagedZip, validSha));
+        Assert.False(updates.VerifyPayloadHash(stagedZip, "0000"));
 
-        var cmdPath = updates.StageUpdateScript(stagedExe, targetExe, validSha);
-        Assert.True(File.Exists(cmdPath));
-        var scriptText = await File.ReadAllTextAsync(cmdPath);
-        Assert.Contains("chcp 65001", scriptText);
-        Assert.Contains(Environment.ProcessId.ToString(), scriptText);
-        Assert.Contains(targetExe, scriptText);
+        var unicodeDest = Path.Combine(_tempRoot, "Café_Üser", "Dial-v99.0.0");
+        var extractedDir = updates.ExtractVerifiedPackage(stagedZip, validSha, "99.0.0-alpha", unicodeDest);
+        Assert.Equal(Path.GetFullPath(unicodeDest), extractedDir);
+        Assert.True(File.Exists(Path.Combine(extractedDir, "Dial.exe")));
+        Assert.True(File.Exists(Path.Combine(extractedDir, "Dial.dll")));
+        Assert.True(File.Exists(Path.Combine(extractedDir, "Assets", "Locales", "nl-NL.json")));
+        Assert.Equal("small-apphost", await File.ReadAllTextAsync(Path.Combine(extractedDir, "Dial.exe")));
+        Assert.False(File.Exists(stagedZip));
 
-        Assert.Throws<ArgumentException>(() => updates.StageUpdateScript(stagedExe, "C:\\bad\"path\\app.exe", validSha));
+        // 2. Corrupt SHA256 rejects extraction
+        var badHashZip = Path.Combine(_tempRoot, "badhash.zip");
+        CreateTestZip(badHashZip, new Dictionary<string, string> { ["Dial.exe"] = "ok" });
+        Assert.Throws<InvalidOperationException>(() => updates.ExtractVerifiedPackage(badHashZip, new string('0', 64), "99.0.0"));
+
+        // 3. Zip Slip traversal entry is rejected and writes nothing outside extraction root
+        var traversalZip = Path.Combine(_tempRoot, "zipslip.zip");
+        CreateTestZip(traversalZip, new Dictionary<string, string> { ["../../escaped.txt"] = "pwn" });
+        var traversalSha = ComputeSha256(traversalZip);
+        var isolatedDest = Path.Combine(_tempRoot, "nested", "extract");
+        Assert.Throws<InvalidDataException>(() => updates.ExtractVerifiedPackage(traversalZip, traversalSha, "99.0.0", isolatedDest));
+        Assert.False(File.Exists(Path.Combine(_tempRoot, "escaped.txt")));
+
+        // 4. Disallowed script entry (.cmd) inside update archive is rejected
+        var scriptZip = Path.Combine(_tempRoot, "script.zip");
+        CreateTestZip(scriptZip, new Dictionary<string, string> { ["evil.cmd"] = "@echo off" });
+        var scriptSha = ComputeSha256(scriptZip);
+        Assert.Throws<InvalidDataException>(() => updates.ExtractVerifiedPackage(scriptZip, scriptSha, "99.0.0"));
     }
 
     [Fact]
@@ -149,7 +172,14 @@ public sealed class DiagnosticsAndUpdateTests : IDisposable
     {
         AppVersion.SetEntryAssemblyOverride(typeof(DiagnosticsAndUpdateTests).Assembly);
         var paths = new PathService(_tempRoot);
-        var payloadBytes = Encoding.UTF8.GetBytes("MZ-fake-dial-release-binary-0.1.2-alpha");
+        Directory.CreateDirectory(_tempRoot);
+        var sourceZip = Path.Combine(_tempRoot, "github-release.zip");
+        CreateTestZip(sourceZip, new Dictionary<string, string>
+        {
+            ["Dial.exe"] = "small-apphost-0.1.4",
+            ["Dial.dll"] = "dial-core"
+        });
+        var payloadBytes = await File.ReadAllBytesAsync(sourceZip);
         var validSha = Convert.ToHexString(SHA256.HashData(payloadBytes)).ToLowerInvariant();
 
         var handler = new StubGitHubUpdateHandler(req =>
@@ -165,7 +195,7 @@ public sealed class DiagnosticsAndUpdateTests : IDisposable
                         "prerelease": true,
                         "html_url": "https://github.com/projectmark/Dial/releases/tag/v99.0.0-alpha",
                         "assets": [
-                          { "name": "Dial.exe", "browser_download_url": "https://github.com/projectmark/Dial/releases/download/v99.0.0-alpha/Dial.exe" },
+                          { "name": "Dial-v99.0.0-alpha-win-x64.zip", "browser_download_url": "https://github.com/projectmark/Dial/releases/download/v99.0.0-alpha/Dial-v99.0.0-alpha-win-x64.zip" },
                           { "name": "releases.json", "browser_download_url": "https://github.com/projectmark/Dial/releases/download/v99.0.0-alpha/releases.json" }
                         ]
                       }
@@ -183,7 +213,7 @@ public sealed class DiagnosticsAndUpdateTests : IDisposable
                     {
                       "version": "99.0.0-alpha",
                       "sha256": "{{validSha}}",
-                      "downloadUrl": "https://github.com/projectmark/Dial/releases/download/v99.0.0-alpha/Dial.exe",
+                      "downloadUrl": "https://github.com/projectmark/Dial/releases/download/v99.0.0-alpha/Dial-v99.0.0-alpha-win-x64.zip",
                       "releaseNotesUrl": "https://github.com/projectmark/Dial/releases/tag/v99.0.0-alpha"
                     }
                     """;
@@ -193,14 +223,14 @@ public sealed class DiagnosticsAndUpdateTests : IDisposable
                 };
             }
 
-            if (url == "https://github.com/projectmark/Dial/releases/download/v99.0.0-alpha/Dial.exe")
+            if (url == "https://github.com/projectmark/Dial/releases/download/v99.0.0-alpha/Dial-v99.0.0-alpha-win-x64.zip")
             {
                 var redirect = new HttpResponseMessage(HttpStatusCode.Found);
-                redirect.Headers.Location = new Uri("https://objects.githubusercontent.com/github-production-release-asset/Dial.exe");
+                redirect.Headers.Location = new Uri("https://objects.githubusercontent.com/github-production-release-asset/Dial-v99.0.0-alpha-win-x64.zip");
                 return redirect;
             }
 
-            if (url == "https://objects.githubusercontent.com/github-production-release-asset/Dial.exe")
+            if (url == "https://objects.githubusercontent.com/github-production-release-asset/Dial-v99.0.0-alpha-win-x64.zip")
             {
                 var resp = new HttpResponseMessage(HttpStatusCode.OK)
                 {
@@ -210,10 +240,10 @@ public sealed class DiagnosticsAndUpdateTests : IDisposable
                 return resp;
             }
 
-            if (url == "https://github.com/projectmark/Dial/releases/download/v99.0.0-alpha/EvilRedirect.exe")
+            if (url == "https://github.com/projectmark/Dial/releases/download/v99.0.0-alpha/EvilRedirect.zip")
             {
                 var redirect = new HttpResponseMessage(HttpStatusCode.Found);
-                redirect.Headers.Location = new Uri("https://evil.example.invalid/Dial.exe");
+                redirect.Headers.Location = new Uri("https://evil.example.invalid/Dial-v99.0.0-alpha-win-x64.zip");
                 return redirect;
             }
 
@@ -233,10 +263,15 @@ public sealed class DiagnosticsAndUpdateTests : IDisposable
         Assert.Equal("99.0.0-alpha", preCheck.LatestVersion);
         Assert.Equal(validSha, preCheck.Manifest!.Sha256);
 
-        // Valid download across GitHub -> objects.githubusercontent.com redirect succeeds and passes SHA256
+        // Valid download across GitHub -> objects.githubusercontent.com redirect succeeds, passes SHA256, and extracts cleanly
         var stagedPath = await updates.DownloadAndVerifyUpdateAsync(preCheck.Manifest);
         Assert.True(File.Exists(stagedPath));
+        Assert.EndsWith(".zip", stagedPath, StringComparison.OrdinalIgnoreCase);
         Assert.True(updates.VerifyPayloadHash(stagedPath, validSha));
+
+        var extractedDir = updates.ExtractVerifiedPackage(stagedPath, validSha, preCheck.Manifest.Version);
+        Assert.True(File.Exists(Path.Combine(extractedDir, "Dial.exe")));
+        Assert.True(File.Exists(Path.Combine(extractedDir, "Dial.dll")));
 
         // Corrupt SHA256 rejects download and deletes staged artifact
         var badShaManifest = preCheck.Manifest with { Sha256 = new string('0', 64) };
@@ -245,9 +280,31 @@ public sealed class DiagnosticsAndUpdateTests : IDisposable
         // Redirect outside GitHub/githubusercontent.com is blocked
         var evilManifest = preCheck.Manifest with
         {
-            DownloadUrl = "https://github.com/projectmark/Dial/releases/download/v99.0.0-alpha/EvilRedirect.exe"
+            DownloadUrl = "https://github.com/projectmark/Dial/releases/download/v99.0.0-alpha/EvilRedirect.zip"
         };
         await Assert.ThrowsAsync<InvalidDataException>(() => updates.DownloadAndVerifyUpdateAsync(evilManifest));
+    }
+
+    private static void CreateTestZip(string zipPath, Dictionary<string, string> entries)
+    {
+        if (File.Exists(zipPath))
+        {
+            File.Delete(zipPath);
+        }
+
+        using var archive = ZipFile.Open(zipPath, ZipArchiveMode.Create);
+        foreach (var (name, content) in entries)
+        {
+            var entry = archive.CreateEntry(name);
+            using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            writer.Write(content);
+        }
+    }
+
+    private static string ComputeSha256(string filePath)
+    {
+        using var stream = File.OpenRead(filePath);
+        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
     }
 
     private sealed class StubGitHubUpdateHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) : HttpMessageHandler

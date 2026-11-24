@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -25,13 +26,12 @@ public sealed record UpdateCheckResult(
 
 /// <summary>
 /// Checks release manifests (local JSON, HTTP, or GitHub Releases), verifies SHA256 hashes,
-/// downloads updates safely, and stages clean self-replacing restarts.
+/// downloads updates safely, and extracts verified portable ZIP packages.
 /// </summary>
 public interface IUpdateService
 {
     bool ShouldAutoCheck(AppSettings settings, DateTimeOffset utcNow);
     bool ShouldShowWhatsNew(AppSettings settings);
-    bool CanOverwriteCurrentExecutable(out string? targetExePath);
     Task<UpdateCheckResult> CheckForUpdatesAsync(string manifestPathOrUrl, CancellationToken ct = default);
     Task<UpdateCheckResult> CheckForGitHubUpdatesAsync(
         string? repositorySlugOrUrl = null,
@@ -42,18 +42,29 @@ public interface IUpdateService
         IProgress<double>? progress = null,
         CancellationToken ct = default);
     bool VerifyPayloadHash(string filePath, string expectedSha256);
-    string StageUpdateScript(string stagedExePath, string targetExePath, string expectedSha256);
-    bool ApplyUpdateAndRestart(string stagedExePath, string expectedSha256, bool launchDetached = true);
+    string ExtractVerifiedPackage(
+        string stagedZipPath,
+        string expectedSha256,
+        string targetVersion,
+        string? destinationDirectory = null);
+    bool OpenExtractedUpdateFolder(string extractedDirectory);
 }
 
 /// <summary>
-/// Default SHA256-verified self-updater supporting GitHub Releases and batch swaps inside %AppData%/&lt;App&gt;/pending/.
+/// Default SHA256-verified updater supporting GitHub Releases and hardened ZIP extraction inside %AppData%/&lt;App&gt;/pending/.
 /// </summary>
 public sealed class UpdateService : IUpdateService
 {
     private const int MaxManifestBytes = 1024 * 1024;
     private const long MaxPayloadBytes = 250L * 1024 * 1024;
+    private const int MaxZipEntries = 2500;
+    private const long MaxExtractedBytes = 512L * 1024 * 1024;
     private const int MaxRedirects = 5;
+
+    private static readonly HashSet<string> DisallowedArchiveExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".cmd", ".bat", ".ps1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".scr", ".hta", ".lnk", ".pif"
+    };
 
     private static readonly HttpClient SharedHttp = CreateHttpClient(allowAutoRedirect: true, TimeSpan.FromSeconds(15), disposeHandler: true);
     private static readonly HttpClient SharedDownloadHttp = CreateHttpClient(allowAutoRedirect: false, TimeSpan.FromMinutes(5), disposeHandler: true);
@@ -124,43 +135,6 @@ public sealed class UpdateService : IUpdateService
         }
 
         return false;
-    }
-
-    /// <inheritdoc />
-    public bool CanOverwriteCurrentExecutable(out string? targetExePath)
-    {
-        targetExePath = Environment.ProcessPath;
-        if (string.IsNullOrWhiteSpace(targetExePath) ||
-            !targetExePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        var fileName = Path.GetFileName(targetExePath);
-        if (string.Equals(fileName, "dotnet.exe", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        var dir = Path.GetDirectoryName(targetExePath);
-        if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
-        {
-            return false;
-        }
-
-        var probePath = Path.Combine(dir, $".chassis_write_probe_{Guid.NewGuid():N}.tmp");
-        try
-        {
-            using (File.Create(probePath, 1, FileOptions.DeleteOnClose))
-            {
-            }
-
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
     }
 
     /// <inheritdoc />
@@ -305,8 +279,8 @@ public sealed class UpdateService : IUpdateService
             }
         }
 
-        // Fallback to .exe + checksum.sha256 assets if releases.json was not attached or omitted an external GitHub URL.
-        var exeAsset = FindPreferredExeAsset(best.Assets);
+        // Fallback to .zip (or legacy .exe) + checksum.sha256 assets if releases.json was not attached or omitted an external GitHub URL.
+        var packageAsset = FindPreferredPackageAsset(best.Assets);
         if (manifest is null || !IsValidGitHubHttps(manifest.DownloadUrl))
         {
             var checksumAsset = best.Assets.FirstOrDefault(a =>
@@ -317,17 +291,17 @@ public sealed class UpdateService : IUpdateService
                 !string.IsNullOrEmpty(checksumAsset.Url) &&
                 Uri.TryCreate(checksumAsset.Url, UriKind.Absolute, out var shaUri) &&
                 IsAllowedGitHubUri(shaUri) &&
-                !string.IsNullOrEmpty(exeAsset.Name))
+                !string.IsNullOrEmpty(packageAsset.Name))
             {
                 var checksumText = await DownloadGitHubStringAsync(shaUri, 64 * 1024, ct).ConfigureAwait(false);
-                sha256 = ParseChecksumForFile(checksumText, exeAsset.Name) ?? string.Empty;
+                sha256 = ParseChecksumForFile(checksumText, packageAsset.Name) ?? string.Empty;
             }
 
-            if (!string.IsNullOrEmpty(exeAsset.Url))
+            if (!string.IsNullOrEmpty(packageAsset.Url))
             {
                 manifest = new UpdateManifest(
                     Version: manifest?.Version ?? latestVersion,
-                    DownloadUrl: exeAsset.Url,
+                    DownloadUrl: packageAsset.Url,
                     Sha256: sha256,
                     ReleaseNotesUrl: IsValidGitHubHttps(best.HtmlUrl) ? best.HtmlUrl : null,
                     IsPreRelease: best.IsPreRelease);
@@ -336,7 +310,7 @@ public sealed class UpdateService : IUpdateService
 
         if (manifest is null || !IsValidGitHubHttps(manifest.DownloadUrl))
         {
-            return new UpdateCheckResult(false, currentVersion, latestVersion, null, "Release is missing a valid executable asset.");
+            return new UpdateCheckResult(false, currentVersion, latestVersion, null, "Release is missing a valid package asset.");
         }
 
         return new UpdateCheckResult(true, currentVersion, manifest.Version, manifest);
@@ -361,7 +335,10 @@ public sealed class UpdateService : IUpdateService
         }
 
         _paths.EnsureDirectoriesExist();
-        var stagedPath = Path.Combine(_paths.PendingUpdatesDirectory, $"{AppVersion.EntryAssemblyName}.staged.exe");
+        var ext = initialUri.AbsolutePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+            ? ".zip"
+            : ".exe";
+        var stagedPath = Path.Combine(_paths.PendingUpdatesDirectory, $"{AppVersion.EntryAssemblyName}.staged{ext}");
         var partPath = stagedPath + ".part";
 
         try
@@ -573,19 +550,28 @@ public sealed class UpdateService : IUpdateService
         output.Add((semVer, tag, effectivePreRelease, htmlUrl, assets));
     }
 
-    private static (string Name, string Url) FindPreferredExeAsset(List<(string Name, string Url)> assets)
+    private static (string Name, string Url) FindPreferredPackageAsset(List<(string Name, string Url)> assets)
     {
-        var preferredName = $"{AppVersion.EntryAssemblyName}.exe";
-        var preferred = assets.FirstOrDefault(a => string.Equals(a.Name, preferredName, StringComparison.OrdinalIgnoreCase));
-        if (!string.IsNullOrEmpty(preferred.Url))
+        var preferredZipPrefix = $"{AppVersion.EntryAssemblyName}-";
+        var preferredZip = assets.FirstOrDefault(a =>
+            a.Name.StartsWith(preferredZipPrefix, StringComparison.OrdinalIgnoreCase) &&
+            a.Name.EndsWith("-win-x64.zip", StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrEmpty(preferredZip.Url))
         {
-            return preferred;
+            return preferredZip;
         }
 
-        var releaseExe = assets.FirstOrDefault(a => string.Equals(a.Name, "release.exe", StringComparison.OrdinalIgnoreCase));
-        if (!string.IsNullOrEmpty(releaseExe.Url))
+        var anyZip = assets.FirstOrDefault(a => a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrEmpty(anyZip.Url))
         {
-            return releaseExe;
+            return anyZip;
+        }
+
+        var preferredExeName = $"{AppVersion.EntryAssemblyName}.exe";
+        var preferredExe = assets.FirstOrDefault(a => string.Equals(a.Name, preferredExeName, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrEmpty(preferredExe.Url))
+        {
+            return preferredExe;
         }
 
         return assets.FirstOrDefault(a => a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
@@ -663,86 +649,171 @@ public sealed class UpdateService : IUpdateService
     }
 
     /// <inheritdoc />
-    public string StageUpdateScript(string stagedExePath, string targetExePath, string expectedSha256)
+    public string ExtractVerifiedPackage(
+        string stagedZipPath,
+        string expectedSha256,
+        string targetVersion,
+        string? destinationDirectory = null)
     {
-        if (!VerifyPayloadHash(stagedExePath, expectedSha256))
+        if (!VerifyPayloadHash(stagedZipPath, expectedSha256))
         {
-            throw new InvalidOperationException("SHA256 verification failed for staged update binary.");
+            throw new InvalidOperationException("SHA256 verification failed for staged update package.");
         }
-
-        var safeStagedPath = SanitizeCmdPath(stagedExePath, nameof(stagedExePath));
-        var safeTargetPath = SanitizeCmdPath(targetExePath, nameof(targetExePath));
 
         _paths.EnsureDirectoriesExist();
-        var scriptPath = Path.Combine(_paths.PendingUpdatesDirectory, "apply_update.cmd");
-        var pid = Environment.ProcessId;
+        var safeVersion = SanitizeVersionSegment(targetVersion);
+        var destRoot = Path.GetFullPath(
+            string.IsNullOrWhiteSpace(destinationDirectory)
+                ? Path.Combine(_paths.PendingUpdatesDirectory, $"{AppVersion.EntryAssemblyName}-v{safeVersion}")
+                : destinationDirectory);
+        var destRootWithSeparator = destRoot.EndsWith(Path.DirectorySeparatorChar)
+            ? destRoot
+            : destRoot + Path.DirectorySeparatorChar;
 
-        var script = new StringBuilder();
-        script.AppendLine("@echo off");
-        script.AppendLine("chcp 65001 >NUL");
-        script.AppendLine("setlocal");
-        script.AppendLine($"set PID={pid}");
-        script.AppendLine(":waitloop");
-        script.AppendLine("tasklist /FI \"PID eq %PID%\" 2>NUL | find /I \"%PID%\" >NUL");
-        script.AppendLine("if \"%ERRORLEVEL%\"==\"0\" (");
-        script.AppendLine("    timeout /t 1 /nobreak >NUL");
-        script.AppendLine("    goto waitloop");
-        script.AppendLine(")");
-        script.AppendLine("set /a RETRIES=0");
-        script.AppendLine(":copyloop");
-        script.AppendLine($"copy /Y \"{EscapeBatchPercent(safeStagedPath)}\" \"{EscapeBatchPercent(safeTargetPath)}\" >NUL 2>&1");
-        script.AppendLine("if \"%ERRORLEVEL%\"==\"0\" goto copydone");
-        script.AppendLine("set /a RETRIES+=1");
-        script.AppendLine("if %RETRIES% GEQ 5 goto copydone");
-        script.AppendLine("timeout /t 1 /nobreak >NUL");
-        script.AppendLine("goto copyloop");
-        script.AppendLine(":copydone");
-        script.AppendLine($"del /F /Q \"{EscapeBatchPercent(safeStagedPath)}\" >NUL 2>&1");
-        script.AppendLine($"start \"\" \"{EscapeBatchPercent(safeTargetPath)}\"");
-        script.AppendLine("del /F /Q \"%~f0\" >NUL 2>&1");
-
-        File.WriteAllText(scriptPath, script.ToString(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-        return scriptPath;
-    }
-
-    private static string SanitizeCmdPath(string path, string paramName)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(path, paramName);
-        if (path.IndexOfAny(['"', '\r', '\n', '\0']) >= 0)
+        if (Directory.Exists(destRoot))
         {
-            throw new ArgumentException("Update path contains invalid characters.", paramName);
+            Directory.Delete(destRoot, recursive: true);
         }
 
-        return Path.GetFullPath(path);
+        Directory.CreateDirectory(destRoot);
+
+        try
+        {
+            using var archive = ZipFile.OpenRead(stagedZipPath);
+            if (archive.Entries.Count > MaxZipEntries)
+            {
+                throw new InvalidDataException("Update archive exceeds maximum allowed entry count.");
+            }
+
+            long totalExtractedBytes = 0;
+            var buffer = new byte[81_920];
+
+            foreach (var entry in archive.Entries)
+            {
+                var normalizedEntry = entry.FullName.Replace('/', Path.DirectorySeparatorChar)
+                    .Replace('\\', Path.DirectorySeparatorChar);
+                var candidatePath = Path.GetFullPath(Path.Combine(destRoot, normalizedEntry));
+                var isRootSelf = string.Equals(candidatePath, destRoot, StringComparison.OrdinalIgnoreCase);
+
+                if (!candidatePath.StartsWith(destRootWithSeparator, StringComparison.OrdinalIgnoreCase) && !isRootSelf)
+                {
+                    throw new InvalidDataException($"Update archive contains unsafe path traversal entry: {entry.FullName}");
+                }
+
+                var isDirectory = entry.FullName.EndsWith('/') ||
+                                  entry.FullName.EndsWith('\\') ||
+                                  string.IsNullOrEmpty(entry.Name);
+                if (isDirectory)
+                {
+                    Directory.CreateDirectory(candidatePath);
+                    continue;
+                }
+
+                if (!candidatePath.StartsWith(destRootWithSeparator, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidDataException($"Update archive entry resolves outside extraction root: {entry.FullName}");
+                }
+
+                var ext = Path.GetExtension(candidatePath);
+                if (DisallowedArchiveExtensions.Contains(ext))
+                {
+                    throw new InvalidDataException($"Update archive contains disallowed script or shortcut entry: {entry.Name}");
+                }
+
+                if (entry.Length > MaxExtractedBytes || totalExtractedBytes + entry.Length > MaxExtractedBytes)
+                {
+                    throw new InvalidDataException("Update archive exceeds maximum allowed uncompressed size.");
+                }
+
+                var parentDir = Path.GetDirectoryName(candidatePath);
+                if (!string.IsNullOrEmpty(parentDir))
+                {
+                    Directory.CreateDirectory(parentDir);
+                }
+
+                using var entryStream = entry.Open();
+                using var outStream = new FileStream(candidatePath, FileMode.Create, FileAccess.Write, FileShare.None, buffer.Length);
+                int read;
+                while ((read = entryStream.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    totalExtractedBytes += read;
+                    if (totalExtractedBytes > MaxExtractedBytes)
+                    {
+                        throw new InvalidDataException("Update archive exceeds maximum allowed uncompressed size.");
+                    }
+
+                    outStream.Write(buffer, 0, read);
+                }
+            }
+        }
+        catch
+        {
+            try
+            {
+                if (Directory.Exists(destRoot))
+                {
+                    Directory.Delete(destRoot, recursive: true);
+                }
+            }
+            catch
+            {
+                // Best-effort cleanup of partial extraction directory.
+            }
+
+            throw;
+        }
+
+        try
+        {
+            File.Delete(stagedZipPath);
+        }
+        catch
+        {
+            // Ignore temporary zip cleanup errors after successful extraction.
+        }
+
+        return destRoot;
     }
 
-    private static string EscapeBatchPercent(string value)
-        => value.Replace("%", "%%", StringComparison.Ordinal);
-
     /// <inheritdoc />
-    public bool ApplyUpdateAndRestart(string stagedExePath, string expectedSha256, bool launchDetached = true)
+    public bool OpenExtractedUpdateFolder(string extractedDirectory)
     {
-        var currentExe = Environment.ProcessPath;
-        if (string.IsNullOrWhiteSpace(currentExe))
+        if (string.IsNullOrWhiteSpace(extractedDirectory))
         {
             return false;
         }
 
-        var scriptPath = StageUpdateScript(stagedExePath, currentExe, expectedSha256);
-        if (!launchDetached)
+        var fullPath = Path.GetFullPath(extractedDirectory);
+        if (!Directory.Exists(fullPath))
         {
-            return true;
+            return false;
         }
 
-        Process.Start(new ProcessStartInfo
+        Process.Start(new ProcessStartInfo(fullPath)
         {
-            FileName = "cmd.exe",
-            Arguments = $"/c \"{scriptPath}\"",
-            CreateNoWindow = true,
-            UseShellExecute = false
+            UseShellExecute = true
         });
-
         return true;
+    }
+
+    private static string SanitizeVersionSegment(string? version)
+    {
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            return "update";
+        }
+
+        var cleaned = new string(version.Trim()
+            .Select(c => char.IsLetterOrDigit(c) || c is '.' or '_' or '-' ? c : '_')
+            .ToArray())
+            .Trim('.');
+
+        while (cleaned.Contains("..", StringComparison.Ordinal))
+        {
+            cleaned = cleaned.Replace("..", "_", StringComparison.Ordinal);
+        }
+
+        return string.IsNullOrWhiteSpace(cleaned) ? "update" : cleaned;
     }
 
     private static bool TryReadBool(JsonElement root, string propertyName)

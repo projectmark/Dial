@@ -264,6 +264,16 @@ public sealed partial class App : Application
         var changelog = Services.GetRequiredService<IChangelogService>();
         changelog.RegisterRelease(new ChangelogRelease(
             Version: AppVersion.InformationalVersion,
+            ReleaseDate: new DateTime(2026, 11, 24),
+            Changes: new ChangelogChange[]
+            {
+                new ChangelogChange("Changed", "Changelog.v014Alpha.ChangedLooseFilePortableBuild"),
+                new ChangelogChange("Changed", "Changelog.v014Alpha.ChangedSaferZipUpdater")
+            },
+            IsLatest: true));
+
+        changelog.RegisterRelease(new ChangelogRelease(
+            Version: "0.1.3-alpha",
             ReleaseDate: new DateTime(2026, 11, 23),
             Changes: new ChangelogChange[]
             {
@@ -272,7 +282,7 @@ public sealed partial class App : Application
                 new ChangelogChange("Changed", "Changelog.v013Alpha.ChangedShareableZipAndAppInfo"),
                 new ChangelogChange("Fixed", "Changelog.v013Alpha.FixedTrayRestoreFlashAndLazyStartup")
             },
-            IsLatest: true));
+            IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
             Version: "0.1.2-alpha",

@@ -59,7 +59,7 @@ src/
 tests/
 └── Chassis.Tests/              # xUnit .NET 10 testproject (zonder XAML/WinUI-afhankelijkheid)
 scripts/
-└── build-release.ps1           # Bouwt standalone single-file Dial.exe met SHA256 & releases.json
+└── build-release.ps1           # Bouwt portable loose-file release (kleine Dial.exe + DLL's + .zip) met SHA256 & releases.json
 ```
 
 ---
@@ -96,13 +96,13 @@ dotnet test tests/Chassis.Tests/Chassis.Tests.csproj -c Release
 dotnet build Dial.slnx -c Release
 ```
 
-### Standalone single-file executable bouwen
+### Portable loose-file release bouwen
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build-release.ps1
 ```
-De gegenereerde standalone executable wordt inclusief een deelbaar `.zip`-pakket (`Dial-v<Versie>-win-x64.zip`), `checksum.sha256` en `releases.json` geplaatst in `releases/v<Versie>/` en `releases/latest/`.
+De gegenereerde portable build (`app\Dial.exe` als kleine launcher naast de losse runtime-DLL's) wordt inclusief een deelbaar `.zip`-pakket (`Dial-v<Versie>-win-x64.zip`), `checksum.sha256` en `releases.json` geplaatst in `releases/v<Versie>/` en `releases/latest/`.
 
-> **Delen op andere Windows-pc's:** omdat de `.exe` niet digitaal ondertekend is met een betaald Code Signing-certificaat, zit er in de `.zip` een `LEESMIJ-STARTEN.txt` met uitpak-, SmartScreen- en SHA256-instructies. Pak altijd eerst de volledige `.zip` uit (of kies *Eigenschappen → Blokkering opheffen* op het `.zip`-bestand vóór het uitpakken).
+> **Delen op andere Windows-pc's:** omdat `Dial.exe` niet digitaal ondertekend is met een betaald Code Signing-certificaat, zit er in de `.zip` een `LEESMIJ-STARTEN.txt` met uitpak-, SmartScreen- en SHA256-instructies. Pak altijd eerst de **volledige** `.zip` uit (zodat alle losse bestanden en DLL's naast `Dial.exe` blijven staan) en kies zo nodig *Eigenschappen → Blokkering opheffen* op het `.zip`-bestand vóór het uitpakken.
 
 ---
 
