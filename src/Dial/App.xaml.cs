@@ -267,11 +267,21 @@ public sealed partial class App : Application
             ReleaseDate: new DateTime(2026, 11, 25),
             Changes: new ChangelogChange[]
             {
+                new ChangelogChange("Changed", "Changelog.v016Alpha.GeneralImprovementsAndFixes"),
+                new ChangelogChange("Changed", "Changelog.v016Alpha.Windows11PlatformSupport")
+            },
+            IsLatest: true));
+
+        changelog.RegisterRelease(new ChangelogRelease(
+            Version: "0.1.5-alpha",
+            ReleaseDate: new DateTime(2026, 11, 25),
+            Changes: new ChangelogChange[]
+            {
                 new ChangelogChange("Changed", "Changelog.v015Alpha.ChangedLooseFilePortableBuild"),
                 new ChangelogChange("Changed", "Changelog.v015Alpha.ChangedSaferZipUpdater"),
                 new ChangelogChange("Added", "Changelog.v015Alpha.AddedGplLicenseAndReadme")
             },
-            IsLatest: true));
+            IsLatest: false));
 
         changelog.RegisterRelease(new ChangelogRelease(
             Version: "0.1.3-alpha",
