@@ -28,7 +28,7 @@
     <Company>projectmark</Company>
     <Description>Dial - Windows Internet Radio Desktop App</Description>
     <Copyright>Copyright (c) 2026 projectmark</Copyright>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/projectmark/Dial</RepositoryUrl>
     <ApplicationIcon>Assets\dial.ico</ApplicationIcon>
   </PropertyGroup>

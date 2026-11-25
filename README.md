@@ -15,7 +15,7 @@
     <img src="https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D4?logo=windows11&logoColor=white" alt="Platform Windows 10 | 11" />
     <img src="https://img.shields.io/badge/WinUI%203-.NET%2010%20%2B%20Fluent%202-512BD4?logo=dotnet&logoColor=white" alt="WinUI 3 .NET 10 + Fluent 2" />
     <img src="https://img.shields.io/badge/Arch-x64-0071C5?logo=intel&logoColor=white" alt="Arch x64" />
-    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-2ea44f" alt="License MIT" /></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPLv3-blue?logo=gnu&logoColor=white" alt="License GPLv3" /></a>
   </p>
   <p>
     <a href="https://github.com/projectmark/Dial/stargazers"><img src="https://img.shields.io/github/stars/projectmark/Dial?logo=github&label=stars&color=1f6feb" alt="Stars" /></a>
@@ -153,4 +153,4 @@ Alle configuratie, favorieten, luisterstatistieken en crashlogs worden geïsolee
 
 ## Licentie
 
-Dit project wordt uitgebracht onder de **[MIT License](LICENSE)**.
+Dit project wordt uitgebracht onder de **[GNU General Public License v3.0 (GPLv3)](LICENSE)**.
