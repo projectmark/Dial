@@ -1,9 +1,41 @@
-# Dial
+<div align="center">
 
-Een lichtgewicht, modulaire Windows 11 internetradio-desktopapp gebouwd met **WinUI 3 (Windows App SDK)**, **.NET 10 (LTS)** en het **Microsoft Fluent 2 Design System** op basis van het **Chassis**-platform.
+  <img src="src/Dial/Assets/dial.png" alt="Dial Logo" width="88" height="88" />
+
+  <h1>Dial</h1>
+
+  <p><strong>Lichtgewicht, modulaire Windows 10 & 11 internetradio-desktopapp gebouwd met WinUI 3, .NET 10 en Microsoft Fluent 2</strong></p>
+
+  <p>
+    <a href="https://github.com/projectmark/Dial/releases"><img src="https://img.shields.io/github/v/release/projectmark/Dial?include_prereleases&logo=github&label=version&color=1f6feb" alt="Version" /></a>
+    <a href="https://github.com/projectmark/Dial/commits/master"><img src="https://img.shields.io/github/last-commit/projectmark/Dial?logo=github&label=updated&color=6a9955" alt="Last Updated" /></a>
+    <a href="https://github.com/projectmark/Dial/releases"><img src="https://img.shields.io/github/downloads/projectmark/Dial/total?label=downloads&color=4c1" alt="Downloads" /></a>
+  </p>
+  <p>
+    <img src="https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D4?logo=windows11&logoColor=white" alt="Platform Windows 10 | 11" />
+    <img src="https://img.shields.io/badge/WinUI%203-.NET%2010%20%2B%20Fluent%202-512BD4?logo=dotnet&logoColor=white" alt="WinUI 3 .NET 10 + Fluent 2" />
+    <img src="https://img.shields.io/badge/Arch-x64-0071C5?logo=intel&logoColor=white" alt="Arch x64" />
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-2ea44f" alt="License MIT" /></a>
+  </p>
+  <p>
+    <a href="https://github.com/projectmark/Dial/stargazers"><img src="https://img.shields.io/github/stars/projectmark/Dial?logo=github&label=stars&color=1f6feb" alt="Stars" /></a>
+    <a href="https://github.com/projectmark/Dial/graphs/contributors"><img src="https://img.shields.io/github/contributors/projectmark/Dial?logo=github&label=contributors&color=c9510c" alt="Contributors" /></a>
+  </p>
+
+</div>
 
 ---
-<img width="1233" height="885" alt="image" src="https://github.com/user-attachments/assets/76fbdcbe-131a-41d2-a929-0b75caddc5f1" />
+
+## Download
+
+[![Download Latest Release](https://img.shields.io/badge/DOWNLOAD-LATEST%20RELEASE-6CC644?style=for-the-badge&labelColor=555555)](https://github.com/projectmark/Dial/releases)
+
+- **Directe download (`v0.1.4-alpha` portable `.zip`):** [`Dial-v0.1.4-alpha-win-x64.zip`](https://github.com/projectmark/Dial/releases/download/v0.1.4-alpha/Dial-v0.1.4-alpha-win-x64.zip)
+- **Installatie:** Pak het volledige `.zip`-archief uit naar een map naar keuze en start **`Dial.exe`** (er zijn geen extra runtimes of installaties nodig).
+
+---
+
+<img width="1233" height="885" alt="Dial Screenshot" src="https://github.com/user-attachments/assets/76fbdcbe-131a-41d2-a929-0b75caddc5f1" />
 
 ---
 
@@ -116,3 +148,9 @@ Alle configuratie, favorieten, luisterstatistieken en crashlogs worden geïsolee
 ├── data\listening_stats.json
 └── logs\
 ```
+
+---
+
+## Licentie
+
+Dit project wordt uitgebracht onder de **[MIT License](LICENSE)**.
