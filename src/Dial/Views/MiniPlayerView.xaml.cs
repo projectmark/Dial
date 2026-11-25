@@ -256,15 +256,14 @@ public sealed partial class MiniPlayerView : UserControl
         }
 
         var isLive = snapshot.State is RadioPlaybackState.Playing or RadioPlaybackState.Buffering;
-        PlayPauseGlyph.Glyph = isLive ? "\uE769" : "\uE768";
-        var playLabel = isLive ? _localization["Radio.Stop"] : _localization["Radio.Play"];
-        AutomationProperties.SetName(PlayPauseBtn, playLabel);
-        ToolTipService.SetToolTip(PlayPauseBtn, playLabel);
-
-        MuteGlyph.Glyph = snapshot.IsMuted ? "\uE74F" : "\uE767";
-        var muteLabel = snapshot.IsMuted ? _localization["Radio.Unmute"] : _localization["Radio.Mute"];
-        AutomationProperties.SetName(MuteBtn, muteLabel);
-        ToolTipService.SetToolTip(MuteBtn, muteLabel);
+        OnAirBadgeVisuals.ApplyTransportButtonState(
+            PlayPauseGlyph,
+            PlayPauseBtn,
+            MuteGlyph,
+            MuteBtn,
+            isLive,
+            snapshot.IsMuted,
+            _localization);
         _lastRenderedMuted = snapshot.IsMuted;
 
         ApplyVolumeUi(snapshot.Volume, snapshot.IsMuted, updateSlider: !_isUpdatingSliderFromInput);
@@ -294,9 +293,7 @@ public sealed partial class MiniPlayerView : UserControl
             SleepIndicator.Visibility = Visibility.Visible;
             SleepIcon.Foreground = accent;
             SleepText.Foreground = accent;
-            SleepText.Text = remaining.Value.TotalHours >= 1
-                ? $"{(int)remaining.Value.TotalHours}:{remaining.Value.Minutes:00}:{remaining.Value.Seconds:00}"
-                : $"{remaining.Value.Minutes}:{remaining.Value.Seconds:00}";
+            SleepText.Text = OnAirBadgeVisuals.FormatDuration(remaining.Value);
         }
         else
         {
@@ -314,44 +311,10 @@ public sealed partial class MiniPlayerView : UserControl
         => await _player.NextStationAsync();
 
     private void UpdateTrackLookupButton(RadioStateSnapshot snapshot)
-    {
-        var enabled = _settings.GetOption(RadioOptions.TrackLookupEnabled, true);
-        var hasTrack = snapshot.State != RadioPlaybackState.Error && !string.IsNullOrWhiteSpace(snapshot.NowPlaying);
-
-        if (!enabled || !hasTrack)
-        {
-            OpenTrackLookupBtn.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        var serviceId = _settings.GetOption(RadioOptions.TrackLookupService, MusicLookupHelper.SpotifyId);
-        var serviceName = MusicLookupHelper.GetDisplayName(serviceId);
-        var tooltip = _localization.GetString("Radio.TrackLookup.Tooltip", snapshot.NowPlaying!, serviceName);
-
-        AutomationProperties.SetName(OpenTrackLookupBtn, tooltip);
-        ToolTipService.SetToolTip(OpenTrackLookupBtn, tooltip);
-        OpenTrackLookupBtn.Visibility = Visibility.Visible;
-        _theme.RefreshInteractiveButton(OpenTrackLookupBtn);
-    }
+        => OnAirBadgeVisuals.UpdateTrackLookupButton(OpenTrackLookupBtn, null, snapshot, _settings, _localization, _theme);
 
     private void OpenTrackLookupBtn_Click(object sender, RoutedEventArgs e)
-    {
-        var serviceId = _settings.GetOption(RadioOptions.TrackLookupService, MusicLookupHelper.SpotifyId);
-        var url = MusicLookupHelper.BuildSearchUrl(serviceId, _player.Current.NowPlaying);
-        if (string.IsNullOrEmpty(url))
-        {
-            return;
-        }
-
-        try
-        {
-            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-        }
-        catch
-        {
-            // Ignore shell launch errors on systems without an associated browser handler.
-        }
-    }
+        => OnAirBadgeVisuals.TryOpenTrackLookup(_player.Current, _settings);
 
     private void MuteBtn_Click(object sender, RoutedEventArgs e)
         => _player.ToggleMute();

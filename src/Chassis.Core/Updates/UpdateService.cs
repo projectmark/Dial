@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -26,7 +25,7 @@ public sealed record UpdateCheckResult(
 
 /// <summary>
 /// Checks release manifests (local JSON, HTTP, or GitHub Releases), verifies SHA256 hashes,
-/// downloads updates safely, and extracts verified portable ZIP packages.
+/// and opens verified GitHub Release pages in the default browser without downloading binaries into %AppData%.
 /// </summary>
 public interface IUpdateService
 {
@@ -37,57 +36,39 @@ public interface IUpdateService
         string? repositorySlugOrUrl = null,
         bool includePreReleases = true,
         CancellationToken ct = default);
-    Task<string> DownloadAndVerifyUpdateAsync(
-        UpdateManifest manifest,
-        IProgress<double>? progress = null,
-        CancellationToken ct = default);
     bool VerifyPayloadHash(string filePath, string expectedSha256);
-    string ExtractVerifiedPackage(
-        string stagedZipPath,
-        string expectedSha256,
-        string targetVersion,
-        string? destinationDirectory = null);
-    bool OpenExtractedUpdateFolder(string extractedDirectory);
+    bool TryOpenReleasePage(UpdateManifest manifest);
 }
 
 /// <summary>
-/// Default SHA256-verified updater supporting GitHub Releases and hardened ZIP extraction inside %AppData%/&lt;App&gt;/pending/.
+/// Read-only release checker and SHA256 verifier supporting GitHub Releases.
 /// </summary>
 public sealed class UpdateService : IUpdateService
 {
     private const int MaxManifestBytes = 1024 * 1024;
-    private const long MaxPayloadBytes = 250L * 1024 * 1024;
-    private const int MaxZipEntries = 2500;
-    private const long MaxExtractedBytes = 512L * 1024 * 1024;
     private const int MaxRedirects = 5;
 
-    private static readonly HashSet<string> DisallowedArchiveExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".cmd", ".bat", ".ps1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".scr", ".hta", ".lnk", ".pif"
-    };
-
     private static readonly HttpClient SharedHttp = CreateHttpClient(allowAutoRedirect: true, TimeSpan.FromSeconds(15), disposeHandler: true);
-    private static readonly HttpClient SharedDownloadHttp = CreateHttpClient(allowAutoRedirect: false, TimeSpan.FromMinutes(5), disposeHandler: true);
+    private static readonly HttpClient SharedAssetMetaHttp = CreateHttpClient(allowAutoRedirect: false, TimeSpan.FromSeconds(15), disposeHandler: true);
 
-    private readonly IPathService _paths;
     private readonly HttpClient _apiHttp;
-    private readonly HttpClient _downloadHttp;
+    private readonly HttpClient _assetMetaHttp;
 
     public UpdateService(IPathService paths)
     {
-        _paths = paths;
-        _paths.EnsureDirectoriesExist();
+        ArgumentNullException.ThrowIfNull(paths);
+        paths.EnsureDirectoriesExist();
         _apiHttp = SharedHttp;
-        _downloadHttp = SharedDownloadHttp;
+        _assetMetaHttp = SharedAssetMetaHttp;
     }
 
     public UpdateService(IPathService paths, HttpMessageHandler testHandler)
     {
+        ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(testHandler);
-        _paths = paths;
-        _paths.EnsureDirectoriesExist();
+        paths.EnsureDirectoriesExist();
         _apiHttp = new HttpClient(testHandler, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(15) };
-        _downloadHttp = new HttpClient(testHandler, disposeHandler: false) { Timeout = TimeSpan.FromMinutes(5) };
+        _assetMetaHttp = new HttpClient(testHandler, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(15) };
     }
 
     private static HttpClient CreateHttpClient(bool allowAutoRedirect, TimeSpan timeout, bool disposeHandler)
@@ -259,7 +240,6 @@ public sealed class UpdateService : IUpdateService
 
         UpdateManifest? manifest = null;
 
-        // Prefer releases.json asset when present so SHA256 and version match the build manifest directly.
         var manifestAsset = best.Assets.FirstOrDefault(a =>
             string.Equals(a.Name, "releases.json", StringComparison.OrdinalIgnoreCase));
         if (!string.IsNullOrEmpty(manifestAsset.Url) &&
@@ -279,7 +259,6 @@ public sealed class UpdateService : IUpdateService
             }
         }
 
-        // Fallback to .zip (or legacy .exe) + checksum.sha256 assets if releases.json was not attached or omitted an external GitHub URL.
         var packageAsset = FindPreferredPackageAsset(best.Assets);
         if (manifest is null || !IsValidGitHubHttps(manifest.DownloadUrl))
         {
@@ -316,89 +295,7 @@ public sealed class UpdateService : IUpdateService
         return new UpdateCheckResult(true, currentVersion, manifest.Version, manifest);
     }
 
-    /// <inheritdoc />
-    public async Task<string> DownloadAndVerifyUpdateAsync(
-        UpdateManifest manifest,
-        IProgress<double>? progress = null,
-        CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(manifest);
-        if (!Uri.TryCreate(manifest.DownloadUrl, UriKind.Absolute, out var initialUri) ||
-            !IsAllowedGitHubUri(initialUri))
-        {
-            throw new InvalidDataException("Update download URL must point to an HTTPS GitHub release host.");
-        }
-
-        if (!IsValidSha256Hex(manifest.Sha256))
-        {
-            throw new InvalidDataException("Update manifest does not contain a valid SHA256 checksum.");
-        }
-
-        _paths.EnsureDirectoriesExist();
-        var ext = initialUri.AbsolutePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
-            ? ".zip"
-            : ".exe";
-        var stagedPath = Path.Combine(_paths.PendingUpdatesDirectory, $"{AppVersion.EntryAssemblyName}.staged{ext}");
-        var partPath = stagedPath + ".part";
-
-        try
-        {
-            using var response = await SendWithGitHubRedirectValidationAsync(initialUri, ct).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-
-            var contentLength = response.Content.Headers.ContentLength;
-            if (contentLength is > MaxPayloadBytes)
-            {
-                throw new InvalidDataException("Update binary exceeds maximum allowed size.");
-            }
-
-            await using var remoteStream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-            await using (var localStream = new FileStream(partPath, FileMode.Create, FileAccess.Write, FileShare.None, 81_920, useAsync: true))
-            {
-                var buffer = new byte[81_920];
-                long totalRead = 0;
-                int read;
-                while ((read = await remoteStream.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
-                {
-                    totalRead += read;
-                    if (totalRead > MaxPayloadBytes)
-                    {
-                        throw new InvalidDataException("Update binary exceeds maximum allowed size.");
-                    }
-
-                    await localStream.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
-                    if (contentLength is > 0)
-                    {
-                        progress?.Report(Math.Clamp((double)totalRead / contentLength.Value, 0.0, 1.0));
-                    }
-                    else
-                    {
-                        progress?.Report(-1);
-                    }
-                }
-
-                await localStream.FlushAsync(ct).ConfigureAwait(false);
-            }
-
-            File.Move(partPath, stagedPath, overwrite: true);
-
-            if (!VerifyPayloadHash(stagedPath, manifest.Sha256))
-            {
-                try { File.Delete(stagedPath); } catch { }
-                throw new InvalidDataException("SHA256 verification failed for downloaded update.");
-            }
-
-            progress?.Report(1.0);
-            return stagedPath;
-        }
-        catch
-        {
-            try { if (File.Exists(partPath)) File.Delete(partPath); } catch { }
-            throw;
-        }
-    }
-
-    private async Task<HttpResponseMessage> SendWithGitHubRedirectValidationAsync(Uri initialUri, CancellationToken ct)
+    private async Task<string> DownloadGitHubStringAsync(Uri initialUri, int maxBytes, CancellationToken ct)
     {
         var currentUri = initialUri;
         for (var hop = 0; hop <= MaxRedirects; hop++)
@@ -410,28 +307,20 @@ public sealed class UpdateService : IUpdateService
 
             using var request = new HttpRequestMessage(HttpMethod.Get, currentUri);
             request.Headers.TryAddWithoutValidation("User-Agent", AppVersion.UserAgent);
-            var response = await _downloadHttp.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            using var response = await _assetMetaHttp.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
 
             var status = (int)response.StatusCode;
             if (status is 301 or 302 or 303 or 307 or 308 && response.Headers.Location is { } location)
             {
-                var nextUri = location.IsAbsoluteUri ? location : new Uri(currentUri, location);
-                response.Dispose();
-                currentUri = nextUri;
+                currentUri = location.IsAbsoluteUri ? location : new Uri(currentUri, location);
                 continue;
             }
 
-            return response;
+            response.EnsureSuccessStatusCode();
+            return await ReadLimitedStringAsync(response, maxBytes, ct).ConfigureAwait(false);
         }
 
-        throw new HttpRequestException("Too many redirects while downloading update.");
-    }
-
-    private async Task<string> DownloadGitHubStringAsync(Uri initialUri, int maxBytes, CancellationToken ct)
-    {
-        using var response = await SendWithGitHubRedirectValidationAsync(initialUri, ct).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        return await ReadLimitedStringAsync(response, maxBytes, ct).ConfigureAwait(false);
+        throw new HttpRequestException("Too many redirects while reading release metadata.");
     }
 
     private static async Task<string> DownloadLimitedStringAsync(HttpClient client, Uri uri, int maxBytes, CancellationToken ct)
@@ -509,12 +398,7 @@ public sealed class UpdateService : IUpdateService
         bool includePreReleases,
         List<(SemVersion SemVer, string RawTag, bool IsPreRelease, string? HtmlUrl, List<(string Name, string Url)> Assets)> output)
     {
-        if (item.ValueKind != JsonValueKind.Object)
-        {
-            return;
-        }
-
-        if (TryReadBool(item, "draft"))
+        if (item.ValueKind != JsonValueKind.Object || TryReadBool(item, "draft"))
         {
             return;
         }
@@ -561,20 +445,7 @@ public sealed class UpdateService : IUpdateService
             return preferredZip;
         }
 
-        var anyZip = assets.FirstOrDefault(a => a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
-        if (!string.IsNullOrEmpty(anyZip.Url))
-        {
-            return anyZip;
-        }
-
-        var preferredExeName = $"{AppVersion.EntryAssemblyName}.exe";
-        var preferredExe = assets.FirstOrDefault(a => string.Equals(a.Name, preferredExeName, StringComparison.OrdinalIgnoreCase));
-        if (!string.IsNullOrEmpty(preferredExe.Url))
-        {
-            return preferredExe;
-        }
-
-        return assets.FirstOrDefault(a => a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
+        return assets.FirstOrDefault(a => a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
     }
 
     internal static string? ParseChecksumForFile(string checksumText, string fileName)
@@ -637,7 +508,8 @@ public sealed class UpdateService : IUpdateService
     {
         if (string.IsNullOrWhiteSpace(filePath) ||
             string.IsNullOrWhiteSpace(expectedSha256) ||
-            !File.Exists(filePath))
+            !File.Exists(filePath) ||
+            !IsValidSha256Hex(expectedSha256))
         {
             return false;
         }
@@ -649,171 +521,24 @@ public sealed class UpdateService : IUpdateService
     }
 
     /// <inheritdoc />
-    public string ExtractVerifiedPackage(
-        string stagedZipPath,
-        string expectedSha256,
-        string targetVersion,
-        string? destinationDirectory = null)
+    public bool TryOpenReleasePage(UpdateManifest manifest)
     {
-        if (!VerifyPayloadHash(stagedZipPath, expectedSha256))
-        {
-            throw new InvalidOperationException("SHA256 verification failed for staged update package.");
-        }
+        ArgumentNullException.ThrowIfNull(manifest);
+        var candidate = !string.IsNullOrWhiteSpace(manifest.ReleaseNotesUrl)
+            ? manifest.ReleaseNotesUrl
+            : manifest.DownloadUrl;
 
-        _paths.EnsureDirectoriesExist();
-        var safeVersion = SanitizeVersionSegment(targetVersion);
-        var destRoot = Path.GetFullPath(
-            string.IsNullOrWhiteSpace(destinationDirectory)
-                ? Path.Combine(_paths.PendingUpdatesDirectory, $"{AppVersion.EntryAssemblyName}-v{safeVersion}")
-                : destinationDirectory);
-        var destRootWithSeparator = destRoot.EndsWith(Path.DirectorySeparatorChar)
-            ? destRoot
-            : destRoot + Path.DirectorySeparatorChar;
-
-        if (Directory.Exists(destRoot))
-        {
-            Directory.Delete(destRoot, recursive: true);
-        }
-
-        Directory.CreateDirectory(destRoot);
-
-        try
-        {
-            using var archive = ZipFile.OpenRead(stagedZipPath);
-            if (archive.Entries.Count > MaxZipEntries)
-            {
-                throw new InvalidDataException("Update archive exceeds maximum allowed entry count.");
-            }
-
-            long totalExtractedBytes = 0;
-            var buffer = new byte[81_920];
-
-            foreach (var entry in archive.Entries)
-            {
-                var normalizedEntry = entry.FullName.Replace('/', Path.DirectorySeparatorChar)
-                    .Replace('\\', Path.DirectorySeparatorChar);
-                var candidatePath = Path.GetFullPath(Path.Combine(destRoot, normalizedEntry));
-                var isRootSelf = string.Equals(candidatePath, destRoot, StringComparison.OrdinalIgnoreCase);
-
-                if (!candidatePath.StartsWith(destRootWithSeparator, StringComparison.OrdinalIgnoreCase) && !isRootSelf)
-                {
-                    throw new InvalidDataException($"Update archive contains unsafe path traversal entry: {entry.FullName}");
-                }
-
-                var isDirectory = entry.FullName.EndsWith('/') ||
-                                  entry.FullName.EndsWith('\\') ||
-                                  string.IsNullOrEmpty(entry.Name);
-                if (isDirectory)
-                {
-                    Directory.CreateDirectory(candidatePath);
-                    continue;
-                }
-
-                if (!candidatePath.StartsWith(destRootWithSeparator, StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new InvalidDataException($"Update archive entry resolves outside extraction root: {entry.FullName}");
-                }
-
-                var ext = Path.GetExtension(candidatePath);
-                if (DisallowedArchiveExtensions.Contains(ext))
-                {
-                    throw new InvalidDataException($"Update archive contains disallowed script or shortcut entry: {entry.Name}");
-                }
-
-                if (entry.Length > MaxExtractedBytes || totalExtractedBytes + entry.Length > MaxExtractedBytes)
-                {
-                    throw new InvalidDataException("Update archive exceeds maximum allowed uncompressed size.");
-                }
-
-                var parentDir = Path.GetDirectoryName(candidatePath);
-                if (!string.IsNullOrEmpty(parentDir))
-                {
-                    Directory.CreateDirectory(parentDir);
-                }
-
-                using var entryStream = entry.Open();
-                using var outStream = new FileStream(candidatePath, FileMode.Create, FileAccess.Write, FileShare.None, buffer.Length);
-                int read;
-                while ((read = entryStream.Read(buffer, 0, buffer.Length)) > 0)
-                {
-                    totalExtractedBytes += read;
-                    if (totalExtractedBytes > MaxExtractedBytes)
-                    {
-                        throw new InvalidDataException("Update archive exceeds maximum allowed uncompressed size.");
-                    }
-
-                    outStream.Write(buffer, 0, read);
-                }
-            }
-        }
-        catch
-        {
-            try
-            {
-                if (Directory.Exists(destRoot))
-                {
-                    Directory.Delete(destRoot, recursive: true);
-                }
-            }
-            catch
-            {
-                // Best-effort cleanup of partial extraction directory.
-            }
-
-            throw;
-        }
-
-        try
-        {
-            File.Delete(stagedZipPath);
-        }
-        catch
-        {
-            // Ignore temporary zip cleanup errors after successful extraction.
-        }
-
-        return destRoot;
-    }
-
-    /// <inheritdoc />
-    public bool OpenExtractedUpdateFolder(string extractedDirectory)
-    {
-        if (string.IsNullOrWhiteSpace(extractedDirectory))
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri) ||
+            !IsAllowedGitHubUri(uri))
         {
             return false;
         }
 
-        var fullPath = Path.GetFullPath(extractedDirectory);
-        if (!Directory.Exists(fullPath))
-        {
-            return false;
-        }
-
-        Process.Start(new ProcessStartInfo(fullPath)
+        Process.Start(new ProcessStartInfo(uri.AbsoluteUri)
         {
             UseShellExecute = true
         });
         return true;
-    }
-
-    private static string SanitizeVersionSegment(string? version)
-    {
-        if (string.IsNullOrWhiteSpace(version))
-        {
-            return "update";
-        }
-
-        var cleaned = new string(version.Trim()
-            .Select(c => char.IsLetterOrDigit(c) || c is '.' or '_' or '-' ? c : '_')
-            .ToArray())
-            .Trim('.');
-
-        while (cleaned.Contains("..", StringComparison.Ordinal))
-        {
-            cleaned = cleaned.Replace("..", "_", StringComparison.Ordinal);
-        }
-
-        return string.IsNullOrWhiteSpace(cleaned) ? "update" : cleaned;
     }
 
     private static bool TryReadBool(JsonElement root, string propertyName)

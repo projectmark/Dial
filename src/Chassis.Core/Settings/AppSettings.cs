@@ -41,7 +41,7 @@ public sealed class AppSettings
     public bool StartMinimized { get; set; }
     public bool GlobalHotkeysEnabled { get; set; }
     public string ToggleWindowHotkey { get; set; } = "Ctrl+Shift+Space";
-    public UpdateCheckFrequency UpdateCheckFrequency { get; set; } = UpdateCheckFrequency.Startup;
+    public UpdateCheckFrequency UpdateCheckFrequency { get; set; } = UpdateCheckFrequency.Manual;
     public bool IncludePreReleases { get; set; } = !string.IsNullOrWhiteSpace(Versioning.AppVersion.PreReleaseTag);
     public DateTimeOffset? LastUpdateCheckUtc { get; set; }
     public string? PendingWhatsNewVersion { get; set; }

@@ -27,16 +27,7 @@ public sealed class IcyMetadataReader : IIcyMetadataReader
 
     public IcyMetadataReader()
     {
-        var handler = new SocketsHttpHandler
-        {
-            AllowAutoRedirect = true,
-            AutomaticDecompression = System.Net.DecompressionMethods.None,
-            PooledConnectionLifetime = TimeSpan.FromMinutes(5)
-        };
-        _httpClient = new HttpClient(handler)
-        {
-            Timeout = TimeSpan.FromSeconds(15)
-        };
+        _httpClient = AudioBufferSizing.SharedStreamHttpClient;
     }
 
     public event Action<string?>? NowPlayingChanged;
@@ -161,8 +152,10 @@ public sealed class IcyMetadataReader : IIcyMetadataReader
         request.Headers.TryAddWithoutValidation("Icy-MetaData", "1");
         request.Headers.TryAddWithoutValidation("User-Agent", AppVersion.UserAgent);
 
+        using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        connectCts.CancelAfter(TimeSpan.FromSeconds(15));
         using var response = await _httpClient
-            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
+            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, connectCts.Token)
             .ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
@@ -280,6 +273,5 @@ public sealed class IcyMetadataReader : IIcyMetadataReader
 
         Stop();
         _disposed = true;
-        _httpClient.Dispose();
     }
 }

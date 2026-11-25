@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Chassis.Core.Localization;
 using Chassis.Core.Updates;
 using Chassis.Core.Versioning;
@@ -10,7 +9,7 @@ using Microsoft.UI.Xaml.Controls;
 namespace Chassis.UI.Dialogs;
 
 /// <summary>
-/// Layer 2 Acrylic update confirmation and SHA256-verified package downloader/extractor dialog.
+/// Layer 2 Acrylic update notification dialog that opens the verified GitHub Release page in the user's browser.
 /// </summary>
 public sealed partial class ChassisUpdateDialog : ContentDialog
 {
@@ -20,11 +19,7 @@ public sealed partial class ChassisUpdateDialog : ContentDialog
     private readonly UpdateManifest _manifest;
     private readonly string _currentVersion;
     private readonly Action<string> _onBeforeRestart;
-    private readonly bool _canDownload;
-
-    private CancellationTokenSource? _downloadCts;
-    private bool _isInstalling;
-    private bool _completed;
+    private readonly bool _canOpenRelease;
 
     public ChassisUpdateDialog(
         IUpdateService updates,
@@ -48,7 +43,10 @@ public sealed partial class ChassisUpdateDialog : ContentDialog
         _manifest = checkResult.Manifest;
         _currentVersion = checkResult.CurrentVersion;
         _onBeforeRestart = onBeforeRestart;
-        _canDownload = !string.IsNullOrWhiteSpace(_manifest.DownloadUrl);
+        _canOpenRelease = (Uri.TryCreate(_manifest.ReleaseNotesUrl, UriKind.Absolute, out var notesUri) &&
+                           UpdateService.IsAllowedGitHubUri(notesUri)) ||
+                          (Uri.TryCreate(_manifest.DownloadUrl, UriKind.Absolute, out var dlUri) &&
+                           UpdateService.IsAllowedGitHubUri(dlUri));
 
         InitializeComponent();
         ApplyLocalizationAndTheme();
@@ -82,7 +80,7 @@ public sealed partial class ChassisUpdateDialog : ContentDialog
             _theme.BindInteractiveButton(ReleaseNotesBtn, () => false);
         }
 
-        if (_canDownload)
+        if (_canOpenRelease)
         {
             PrimaryButtonText = _localization["Updates.Dialog.InstallNow"];
             IsPrimaryButtonEnabled = true;
@@ -92,9 +90,6 @@ public sealed partial class ChassisUpdateDialog : ContentDialog
         {
             PrimaryButtonText = string.Empty;
             IsPrimaryButtonEnabled = false;
-            NoticeBlock.Text = _localization["Updates.Dialog.ReadOnlyLocation"];
-            NoticeBlock.Foreground = _theme.GetCautionBrush();
-            NoticeBlock.Visibility = Visibility.Visible;
             DefaultButton = ContentDialogButton.Close;
         }
 
@@ -104,15 +99,9 @@ public sealed partial class ChassisUpdateDialog : ContentDialog
 
     private void ReleaseNotesBtn_Click(object sender, RoutedEventArgs e)
     {
-        if (!Uri.TryCreate(_manifest.ReleaseNotesUrl, UriKind.Absolute, out var uri) ||
-            !UpdateService.IsAllowedGitHubUri(uri))
-        {
-            return;
-        }
-
         try
         {
-            Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+            _updates.TryOpenReleasePage(_manifest);
         }
         catch
         {
@@ -120,78 +109,23 @@ public sealed partial class ChassisUpdateDialog : ContentDialog
         }
     }
 
-    private async void ContentDialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
+    private void ContentDialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
     {
-        if (!_canDownload || _isInstalling || _completed)
+        if (!_canOpenRelease)
         {
             return;
         }
 
-        var deferral = args.GetDeferral();
-        _isInstalling = true;
-        IsPrimaryButtonEnabled = false;
-        NoticeBlock.Visibility = Visibility.Collapsed;
-        ProgressPanel.Visibility = Visibility.Visible;
-        DownloadProgressBar.IsIndeterminate = true;
-        ProgressStatusText.Text = _localization["Updates.Dialog.Downloading"];
-
-        var cts = new CancellationTokenSource();
-        _downloadCts = cts;
-
         try
         {
-            var progress = new Progress<double>(ratio =>
-            {
-                if (ratio < 0)
-                {
-                    DownloadProgressBar.IsIndeterminate = true;
-                }
-                else
-                {
-                    DownloadProgressBar.IsIndeterminate = false;
-                    var pct = Math.Clamp(ratio * 100.0, 0.0, 100.0);
-                    DownloadProgressBar.Value = pct;
-                    ProgressStatusText.Text = _localization.GetString("Updates.Dialog.DownloadingPercent", (int)Math.Round(pct));
-                }
-            });
-
-            var stagedPath = await _updates.DownloadAndVerifyUpdateAsync(_manifest, progress, cts.Token);
-            ProgressStatusText.Text = _localization["Updates.Dialog.Installing"];
-            DownloadProgressBar.IsIndeterminate = true;
-
-            string targetFolder;
-            if (stagedPath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-            {
-                targetFolder = _updates.ExtractVerifiedPackage(stagedPath, _manifest.Sha256, _manifest.Version);
-            }
-            else
-            {
-                targetFolder = Path.GetDirectoryName(stagedPath) ?? stagedPath;
-            }
-
-            try
-            {
-                _updates.OpenExtractedUpdateFolder(targetFolder);
-            }
-            catch
-            {
-                // Opening Explorer is best-effort; the extracted path is still shown below.
-            }
-
             _onBeforeRestart(_manifest.Version);
-
-            DownloadProgressBar.IsIndeterminate = false;
-            DownloadProgressBar.Value = 100;
-            _completed = true;
-
-            args.Cancel = true;
-            NoticeBlock.Text = _localization.GetString("Updates.Dialog.ExtractedSuccess", targetFolder);
-            NoticeBlock.Foreground = _theme.GetSuccessBrush();
-            NoticeBlock.Visibility = Visibility.Visible;
-        }
-        catch (OperationCanceledException)
-        {
-            args.Cancel = true;
+            if (!_updates.TryOpenReleasePage(_manifest))
+            {
+                args.Cancel = true;
+                NoticeBlock.Text = _localization["Updates.Dialog.Failed"];
+                NoticeBlock.Foreground = _theme.GetCriticalBrush();
+                NoticeBlock.Visibility = Visibility.Visible;
+            }
         }
         catch (Exception ex)
         {
@@ -200,25 +134,9 @@ public sealed partial class ChassisUpdateDialog : ContentDialog
             NoticeBlock.Foreground = _theme.GetCriticalBrush();
             NoticeBlock.Visibility = Visibility.Visible;
         }
-        finally
-        {
-            _downloadCts = null;
-            cts.Dispose();
-            _isInstalling = false;
-            IsPrimaryButtonEnabled = _canDownload && !_completed;
-            deferral.Complete();
-        }
     }
 
     private void ContentDialog_CloseButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
     {
-        try
-        {
-            _downloadCts?.Cancel();
-        }
-        catch
-        {
-            // Ignore cancellation race during dialog close.
-        }
     }
 }

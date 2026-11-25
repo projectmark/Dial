@@ -22,7 +22,7 @@ public interface ITrayService : IDisposable
 /// <summary>
 /// Zero-XAML Win32 notification area icon and native context menu provider.
 /// </summary>
-public sealed class TrayService : ITrayService
+public sealed partial class TrayService : ITrayService
 {
     private const uint WmTrayCallback = 0x8000 + 100;
     private const uint WmLButtonUp = 0x0202;
@@ -49,7 +49,7 @@ public sealed class TrayService : ITrayService
     private const uint CmdCustomBase = 2000;
 
     private readonly Win32MessageHost _messageHost;
-    private readonly Guid _handlerId;
+    private Guid? _handlerId;
     private IReadOnlyList<TrayMenuItemDescriptor> _customItems = Array.Empty<TrayMenuItemDescriptor>();
     private Action? _onRestore;
     private Action? _onPrimaryClick;
@@ -63,7 +63,6 @@ public sealed class TrayService : ITrayService
     public TrayService(Win32MessageHost messageHost)
     {
         _messageHost = messageHost;
-        _handlerId = _messageHost.AddMessageHandler(OnWin32Message);
     }
 
     /// <inheritdoc />
@@ -79,7 +78,13 @@ public sealed class TrayService : ITrayService
         _onPrimaryClick = onPrimaryClick;
         _onExit = onExit;
 
-        if (_initialized || !OperatingSystem.IsWindows() || _messageHost.Handle == IntPtr.Zero)
+        if (_initialized || _disposed || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        _handlerId ??= _messageHost.AddMessageHandler(OnWin32Message);
+        if (_messageHost.Handle == IntPtr.Zero)
         {
             return;
         }
@@ -286,7 +291,11 @@ public sealed class TrayService : ITrayService
             _ownedIcon = IntPtr.Zero;
         }
 
-        _messageHost.RemoveMessageHandler(_handlerId);
+        if (_handlerId is { } id)
+        {
+            _messageHost.RemoveMessageHandler(id);
+            _handlerId = null;
+        }
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
@@ -325,30 +334,36 @@ public sealed class TrayService : ITrayService
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     private static extern IntPtr ExtractAssociatedIconW(IntPtr hInst, string lpIconPath, ref ushort lpiIcon);
 
-    [DllImport("user32.dll")]
-    private static extern IntPtr LoadIconW(IntPtr hInstance, IntPtr lpIconName);
+    [LibraryImport("user32.dll")]
+    private static partial IntPtr LoadIconW(IntPtr hInstance, IntPtr lpIconName);
 
-    [DllImport("user32.dll")]
-    private static extern IntPtr CreatePopupMenu();
+    [LibraryImport("user32.dll")]
+    private static partial IntPtr CreatePopupMenu();
 
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    private static extern bool AppendMenuW(IntPtr hMenu, uint uFlags, UIntPtr uIDNewItem, string? lpNewItem);
+    [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool AppendMenuW(IntPtr hMenu, uint uFlags, UIntPtr uIDNewItem, string? lpNewItem);
 
-    [DllImport("user32.dll")]
-    private static extern uint TrackPopupMenuEx(IntPtr hMenu, uint fuFlags, int x, int y, IntPtr hwnd, IntPtr lptpm);
+    [LibraryImport("user32.dll")]
+    private static partial uint TrackPopupMenuEx(IntPtr hMenu, uint fuFlags, int x, int y, IntPtr hwnd, IntPtr lptpm);
 
-    [DllImport("user32.dll")]
-    private static extern bool DestroyMenu(IntPtr hMenu);
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool DestroyMenu(IntPtr hMenu);
 
-    [DllImport("user32.dll")]
-    private static extern bool GetCursorPos(out POINT lpPoint);
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetCursorPos(out POINT lpPoint);
 
-    [DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(IntPtr hwnd);
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool SetForegroundWindow(IntPtr hwnd);
 
-    [DllImport("user32.dll")]
-    private static extern bool DestroyIcon(IntPtr hIcon);
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool DestroyIcon(IntPtr hIcon);
 
-    [DllImport("user32.dll")]
-    private static extern bool AllowSetForegroundWindow(uint dwProcessId);
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool AllowSetForegroundWindow(uint dwProcessId);
 }

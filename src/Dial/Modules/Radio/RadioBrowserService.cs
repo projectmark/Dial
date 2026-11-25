@@ -34,17 +34,15 @@ public sealed class RadioBrowserService : IRadioBrowserService
     ];
 
     private readonly HttpClient _httpClient;
+    private readonly bool _ownsHttpClient;
     private readonly Lock _cacheGate = new();
     private IReadOnlyList<RadioBrowserCountry>? _cachedCountries;
     private bool _disposed;
 
     public RadioBrowserService()
     {
-        _httpClient = new HttpClient
-        {
-            Timeout = TimeSpan.FromSeconds(10)
-        };
-        _httpClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", AppVersion.UserAgent);
+        _httpClient = AudioBufferSizing.SharedStreamHttpClient;
+        _ownsHttpClient = false;
     }
 
     public RadioBrowserService(HttpMessageHandler handler)
@@ -54,7 +52,7 @@ public sealed class RadioBrowserService : IRadioBrowserService
         {
             Timeout = TimeSpan.FromSeconds(10)
         };
-        _httpClient.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", AppVersion.UserAgent);
+        _ownsHttpClient = true;
     }
 
     public async Task<IReadOnlyList<RadioBrowserCountry>> GetCountriesAsync(CancellationToken ct = default)
@@ -303,19 +301,23 @@ public sealed class RadioBrowserService : IRadioBrowserService
         {
             try
             {
-                using var response = await _httpClient.GetAsync($"{mirror}{relativePath}", HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+                using var requestCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                requestCts.CancelAfter(TimeSpan.FromSeconds(10));
+                using var request = new HttpRequestMessage(HttpMethod.Get, $"{mirror}{relativePath}");
+                request.Headers.TryAddWithoutValidation("User-Agent", AppVersion.UserAgent);
+                using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, requestCts.Token).ConfigureAwait(false);
                 response.EnsureSuccessStatusCode();
                 if (response.Content.Headers.ContentLength is > MaxApiResponseBytes)
                 {
                     throw new HttpRequestException("Radio Browser API response exceeded maximum size.");
                 }
 
-                await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+                await using var stream = await response.Content.ReadAsStreamAsync(requestCts.Token).ConfigureAwait(false);
                 using var ms = new MemoryStream();
                 var buffer = new byte[16_384];
                 var total = 0;
                 int read;
-                while ((read = await stream.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+                while ((read = await stream.ReadAsync(buffer, requestCts.Token).ConfigureAwait(false)) > 0)
                 {
                     total += read;
                     if (total > MaxApiResponseBytes)
@@ -328,7 +330,7 @@ public sealed class RadioBrowserService : IRadioBrowserService
 
                 return Encoding.UTF8.GetString(ms.GetBuffer(), 0, (int)ms.Length);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 throw;
             }
@@ -390,6 +392,9 @@ public sealed class RadioBrowserService : IRadioBrowserService
         }
 
         _disposed = true;
-        _httpClient.Dispose();
+        if (_ownsHttpClient)
+        {
+            _httpClient.Dispose();
+        }
     }
 }

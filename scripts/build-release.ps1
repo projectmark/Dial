@@ -102,6 +102,7 @@ $publishArgs = @(
     "/p:IncludeNativeLibrariesForSelfExtract=false",
     "/p:EnableCompressionInSingleFile=false",
     "/p:PublishReadyToRun=false",
+    "/p:SatelliteResourceLanguages=nl-NL%3Ben-US",
     "/p:DebugType=none",
     "/p:DebugSymbols=false",
     "/p:Version=$Version",
@@ -114,6 +115,27 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Get-ChildItem -Path $AppStageDir -Recurse -Filter "*.pdb" -ErrorAction SilentlyContinue | Remove-Item -Force
+
+# Verwijder ongebruikte taal-satellietmappen uit de output (bewaar alleen ondersteunde app-talen uit Assets\Locales)
+$supportedCultures = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+$supportedCultures.Add("en-US") | Out-Null
+$localesDir = Join-Path $AppStageDir "Assets\Locales"
+if (Test-Path $localesDir) {
+    Get-ChildItem -Path $localesDir -Filter "*.json" | ForEach-Object {
+        $supportedCultures.Add($_.BaseName) | Out-Null
+    }
+}
+$reservedDirs = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+foreach ($keepDir in @("Assets", "Microsoft.UI.Xaml", "runtimes")) {
+    $reservedDirs.Add($keepDir) | Out-Null
+}
+Get-ChildItem -Path $AppStageDir -Directory | ForEach-Object {
+    if (-not $reservedDirs.Contains($_.Name) -and
+        $_.Name -match '^[a-z]{2,3}(-[A-Za-z0-9]+)+$' -and
+        -not $supportedCultures.Contains($_.Name)) {
+        Remove-Item -Recurse -Force $_.FullName
+    }
+}
 
 $sourceExe = Join-Path $AppStageDir "$AppName.exe"
 if (-not (Test-Path $sourceExe)) {

@@ -17,34 +17,23 @@ public sealed partial class Win32MessageHost : IDisposable
     private const uint WmQuit = 0x0012;
     private static readonly IntPtr HwndMessage = new(-3);
 
-    private readonly Thread _thread;
+    private readonly Lock _startGate = new();
     private readonly ManualResetEventSlim _readyEvent = new(false);
     private readonly ConcurrentQueue<Action<IntPtr>> _pendingActions = new();
     private readonly ConcurrentDictionary<Guid, Win32MessageHandler> _handlers = new();
+    private Thread? _thread;
     private WndProcDelegate? _wndProcDelegate;
     private string? _windowClassName;
     private uint _threadId;
+    private bool _started;
     private bool _disposed;
-
-    public Win32MessageHost()
-    {
-        _thread = new Thread(ThreadMain)
-        {
-            IsBackground = true,
-            Name = "Chassis.Win32MessageHost"
-        };
-        if (OperatingSystem.IsWindows())
-        {
-            _thread.SetApartmentState(ApartmentState.STA);
-        }
-        _thread.Start();
-        _readyEvent.Wait(TimeSpan.FromSeconds(5));
-    }
 
     public IntPtr Handle { get; private set; }
 
     public Guid AddMessageHandler(Win32MessageHandler handler)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        EnsureStarted();
         var id = Guid.NewGuid();
         _handlers[id] = handler;
         return id;
@@ -52,12 +41,43 @@ public sealed partial class Win32MessageHost : IDisposable
 
     public void RemoveMessageHandler(Guid id) => _handlers.TryRemove(id, out _);
 
+    private void EnsureStarted()
+    {
+        if (_started)
+        {
+            return;
+        }
+
+        lock (_startGate)
+        {
+            if (_started || _disposed)
+            {
+                return;
+            }
+
+            _started = true;
+            _thread = new Thread(ThreadMain)
+            {
+                IsBackground = true,
+                Name = "Chassis.Win32MessageHost"
+            };
+            if (OperatingSystem.IsWindows())
+            {
+                _thread.SetApartmentState(ApartmentState.STA);
+            }
+            _thread.Start();
+        }
+
+        _readyEvent.Wait(TimeSpan.FromSeconds(5));
+    }
+
     /// <summary>
     /// Marshals an operation synchronously onto the STA Win32 message thread.
     /// </summary>
     public T Invoke<T>(Func<IntPtr, T> func)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        EnsureStarted();
         if (Handle == IntPtr.Zero)
         {
             throw new InvalidOperationException("Win32MessageHost window handle is unavailable.");
@@ -189,10 +209,10 @@ public sealed partial class Win32MessageHost : IDisposable
         }
 
         _disposed = true;
-        if (Handle != IntPtr.Zero && OperatingSystem.IsWindows())
+        if (_started && Handle != IntPtr.Zero && OperatingSystem.IsWindows())
         {
             PostMessageW(Handle, WmQuit, IntPtr.Zero, IntPtr.Zero);
-            _thread.Join(TimeSpan.FromSeconds(2));
+            _thread?.Join(TimeSpan.FromSeconds(2));
         }
 
         _handlers.Clear();

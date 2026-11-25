@@ -640,14 +640,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (IsIconic(_hwnd))
-        {
-            ShowWindow(_hwnd, SwRestore);
-        }
-        else
-        {
-            ShowWindow(_hwnd, SwShow);
-        }
+        ShowWindow(_hwnd, IsIconic(_hwnd) ? SwRestore : SwShow);
 
         var keepAlwaysOnTop = _isMiniPlayerMode && _settings.GetOption(RadioModule.MiniAlwaysOnTopOptionKey, true);
         SetWindowPos(_hwnd, HwndTopmost, 0, 0, 0, 0, SwpNomove | SwpNosize | SwpShowWindow);
@@ -656,23 +649,7 @@ public sealed partial class MainWindow : Window
             SetWindowPos(_hwnd, HwndNottopmost, 0, 0, 0, 0, SwpNomove | SwpNosize | SwpShowWindow);
         }
 
-        var fgHwnd = GetForegroundWindow();
-        var fgThread = fgHwnd != IntPtr.Zero ? GetWindowThreadProcessId(fgHwnd, out _) : 0u;
-        var currentThread = GetCurrentThreadId();
-        var attached = fgThread != 0 && fgThread != currentThread && AttachThreadInput(currentThread, fgThread, true);
-        try
-        {
-            SetForegroundWindow(_hwnd);
-            BringWindowToTop(_hwnd);
-        }
-        finally
-        {
-            if (attached)
-            {
-                AttachThreadInput(currentThread, fgThread, false);
-            }
-        }
-
+        SetForegroundWindow(_hwnd);
         Activate();
     }
 
@@ -1118,25 +1095,8 @@ public sealed partial class MainWindow : Window
         uint uFlags);
 
     [DllImport("user32.dll")]
-    private static extern IntPtr GetForegroundWindow();
-
-    [DllImport("user32.dll")]
-    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-
-    [DllImport("kernel32.dll")]
-    private static extern uint GetCurrentThreadId();
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, [MarshalAs(UnmanagedType.Bool)] bool fAttach);
-
-    [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool BringWindowToTop(IntPtr hWnd);
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);

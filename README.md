@@ -13,7 +13,7 @@ Een lichtgewicht, modulaire Windows 11 internetradio-desktopapp gebouwd met **Wi
 - **Frame-nauwkeurige `MediaStreamSource`-engine**: Parseert live MP3 (`MPEG 1/2/2.5 Layer III`) en AAC (`ADTS` / `HE-AACp`) streams frame-voor-frame met ID3v2-skipping en dubbele sync-validatie.
 - **Één schone HTTP-verbinding**: Inline Shoutcast/Icecast ICY-metadata (`icy-metaint`) wordt direct uit de audiostream gescheiden voor live *Now Playing*-titels, zonder een tweede streamverbinding te openen.
 - **Gebruikersbuffer (2s – 30s)**: Stel onder **Instellingen → Radio** zelf in hoeveel seconden vooruit wordt gebufferd (`2s`, `5s` standaard, `10s`, `15s` of `30s`) met live bufferstatus in de speler (`Buffer X,X/Ys`), hysteresis-herstel bij onderbrekingen en automatische herverbinding op een schone frame-grens.
-- **Fallback-ondersteuning**: Niet-MP3/AAC-streams (zoals Ogg, Opus of FLAC) worden via een lokale loopback-bufferproxy (`127.0.0.1`) afgespeeld; HLS/playlist-URL’s (`.m3u8`, `.pls`) vallen direct terug op Windows Media Foundation.
+- **Fallback-ondersteuning**: Niet-MP3/AAC-streams en HLS/playlist-URL’s (`.m3u8`, `.pls`) vallen direct terug op Windows Media Foundation met aparte ICY-metadata uitlezing.
 - **Windows SMTC-integratie & nummer opzoeken**: Bediening en live track-info via Windows mediatoetsen en het vergrendelscherm, plus één-klik nummer opzoeken in **Spotify**, **YouTube Music**, **Deezer** of **Tidal** (instelbaar onder **Instellingen → Radio**).
 
 ### Favorieten, ontdekken & beheren
@@ -47,7 +47,7 @@ src/
     │   ├── RadioPlayerService.cs        # Playback-regie, favorieten, SMTC & streamherstel
     │   ├── AudioStreamFrameEngine.cs    # MP3/ADTS frame-parser & TimedAudioFrameQueue
     │   ├── BufferedFrameMediaSource.cs  # WinRT MediaStreamSource playout-engine
-    │   ├── BufferedStreamProxy.cs       # Loopback HTTP-bufferproxy (fallback) & gedeelde HttpClient
+    │   ├── BufferedStreamProxy.cs       # Gedeelde gepoolde HttpClient, ICY-demuxer & circulaire audiobuffer
     │   ├── IcyMetadataReader.cs         # ICY StreamTitle parser & fallback-lezer
     │   ├── AudioMeterService.cs         # WASAPI per-proces stereo peak meter (IDisposable)
     │   ├── RadioBrowserService.cs       # Radio Browser API client met mirror-failover

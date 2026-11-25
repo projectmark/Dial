@@ -27,7 +27,6 @@ public sealed record BufferedMediaStartResult(
 /// Separates inline ICY metadata on a single HTTP connection, parses discrete MP3 / ADTS AAC frames,
 /// pre-buffers the exact user-configured duration (2s–30s), and seamlessly auto-reconnects on frame
 /// boundaries while audio plays uninterrupted from <see cref="TimedAudioFrameQueue"/>.
-/// Non-MP3/non-AAC streams (Ogg, Opus, FLAC) transparently reuse the open socket via <see cref="BufferedStreamProxy"/>.
 /// </summary>
 public sealed class BufferedFrameMediaSource : IDisposable
 {
@@ -46,7 +45,6 @@ public sealed class BufferedFrameMediaSource : IDisposable
     private int _bufferSeconds;
     private TimedAudioFrameQueue? _queue;
     private AudioFrameAccumulator? _accumulator;
-    private BufferedStreamProxy? _fallbackProxy;
     private MediaStreamSource? _mss;
     private TimeSpan _nextTimestamp = TimeSpan.Zero;
     private long _deliveredSamples;
@@ -58,7 +56,7 @@ public sealed class BufferedFrameMediaSource : IDisposable
     {
         _upstreamUrl = upstreamUrl;
         _bufferSeconds = AudioBufferSizing.NormalizeSeconds(bufferSeconds);
-        _http = httpClient ?? BufferedStreamProxy.SharedStreamHttpClient;
+        _http = httpClient ?? AudioBufferSizing.SharedStreamHttpClient;
         _token = _cts.Token;
     }
 
@@ -79,7 +77,6 @@ public sealed class BufferedFrameMediaSource : IDisposable
 
         _bufferSeconds = AudioBufferSizing.NormalizeSeconds(bufferSeconds);
         _queue?.UpdateBufferSeconds(_bufferSeconds);
-        _fallbackProxy?.UpdateBufferSeconds(_bufferSeconds);
         BufferLevelChanged?.Invoke(BufferedSeconds, _bufferSeconds);
     }
 
@@ -175,45 +172,8 @@ public sealed class BufferedFrameMediaSource : IDisposable
 
             if (detectedFormat is null)
             {
-                // Fallback for non-MP3/non-AAC streams (Ogg, Opus, FLAC): preserve single open socket via BufferedStreamProxy.
-                if (sniffBuffer.Count == 0 && initialBodyStream is not null)
-                {
-                    DisposeUpstreamObjects(initialResponse, initialBodyStream);
-                    return new BufferedMediaStartResult(BufferedMediaStartStatus.Failed, null, headerBitrate, 0, _bufferSeconds);
-                }
-
-                var proxy = new BufferedStreamProxy(_upstreamUrl, _bufferSeconds, _http);
-                proxy.NowPlayingChanged += title => EmitNowPlaying(title);
-                proxy.UpstreamFailed += () => UpstreamFailed?.Invoke();
-
-                var respToHandOff = initialResponse;
-                var streamToHandOff = initialBodyStream!;
-                initialResponse = null;
-                initialBodyStream = null;
-
-                var proxyResult = proxy.StartFromPreopened(
-                    respToHandOff,
-                    streamToHandOff,
-                    demuxer,
-                    sniffBuffer.ToArray(),
-                    string.IsNullOrWhiteSpace(mediaType) ? "audio/mpeg" : mediaType!,
-                    headerBitrate,
-                    initialMetaInt);
-
-                if (proxyResult.Status == BufferedProxyStartStatus.Started && proxyResult.LocalUri is not null)
-                {
-                    _fallbackProxy = proxy;
-                    var uriSource = MediaSource.CreateFromUri(proxyResult.LocalUri);
-                    return new BufferedMediaStartResult(
-                        BufferedMediaStartStatus.Started,
-                        uriSource,
-                        proxyResult.BitrateKbps,
-                        _bufferSeconds,
-                        _bufferSeconds);
-                }
-
-                proxy.Dispose();
-                return new BufferedMediaStartResult(BufferedMediaStartStatus.Failed, null, headerBitrate, 0, _bufferSeconds);
+                DisposeUpstreamObjects(initialResponse, initialBodyStream);
+                return new BufferedMediaStartResult(BufferedMediaStartStatus.BypassToDirect, null, headerBitrate, 0, _bufferSeconds);
             }
 
             // Primary MediaStreamSource path with true frame-timed N-second buffering.
@@ -552,8 +512,5 @@ public sealed class BufferedFrameMediaSource : IDisposable
             _mss.Closed -= OnMediaStreamSourceClosed;
             _mss = null;
         }
-
-        _fallbackProxy?.Dispose();
-        _fallbackProxy = null;
     }
 }

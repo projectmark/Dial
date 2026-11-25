@@ -1,8 +1,11 @@
+using System.Diagnostics;
 using Chassis.Core.Localization;
+using Chassis.Core.Settings;
 using Chassis.UI.Theme;
 using Dial.Modules.Radio;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
@@ -154,6 +157,85 @@ internal static class OnAirBadgeVisuals
             BadgeBorderBrush: new SolidColorBrush(badgeBorderColor),
             BadgeBgBrush: badgeBg,
             OuterGlowBrush: outerGlow);
+    }
+
+    public static string FormatDuration(TimeSpan ts)
+        => ts.TotalHours >= 1
+            ? $"{(int)ts.TotalHours}:{ts.Minutes:00}:{ts.Seconds:00}"
+            : $"{ts.Minutes}:{ts.Seconds:00}";
+
+    public static string FormatStationDisplayName(RadioStation station, int index, bool showNumbers)
+        => showNumbers ? $"{index + 1:00}. {station.Name}" : station.Name;
+
+    public static void ApplyTransportButtonState(
+        FontIcon playPauseGlyph,
+        Button playPauseBtn,
+        FontIcon muteGlyph,
+        Button muteBtn,
+        bool isLiveOrBuffering,
+        bool isMuted,
+        ILocalizationService localization)
+    {
+        playPauseGlyph.Glyph = isLiveOrBuffering ? "\uE769" : "\uE768";
+        var playLabel = isLiveOrBuffering ? localization["Radio.Stop"] : localization["Radio.Play"];
+        AutomationProperties.SetName(playPauseBtn, playLabel);
+        ToolTipService.SetToolTip(playPauseBtn, playLabel);
+
+        muteGlyph.Glyph = isMuted ? "\uE74F" : "\uE767";
+        var muteLabel = isMuted ? localization["Radio.Unmute"] : localization["Radio.Mute"];
+        AutomationProperties.SetName(muteBtn, muteLabel);
+        ToolTipService.SetToolTip(muteBtn, muteLabel);
+    }
+
+    public static void UpdateTrackLookupButton(
+        Button lookupBtn,
+        TextBlock? lookupLabel,
+        RadioStateSnapshot snapshot,
+        ISettingsService settings,
+        ILocalizationService localization,
+        ThemeManager theme)
+    {
+        var enabled = settings.GetOption(RadioOptions.TrackLookupEnabled, true);
+        var hasTrack = snapshot.State != RadioPlaybackState.Error && !string.IsNullOrWhiteSpace(snapshot.NowPlaying);
+
+        if (!enabled || !hasTrack)
+        {
+            lookupBtn.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var serviceId = settings.GetOption(RadioOptions.TrackLookupService, MusicLookupHelper.SpotifyId);
+        var serviceName = MusicLookupHelper.GetDisplayName(serviceId);
+        var tooltip = localization.GetString("Radio.TrackLookup.Tooltip", snapshot.NowPlaying!, serviceName);
+
+        if (lookupLabel is not null)
+        {
+            lookupLabel.Text = serviceName;
+        }
+
+        AutomationProperties.SetName(lookupBtn, tooltip);
+        ToolTipService.SetToolTip(lookupBtn, tooltip);
+        lookupBtn.Visibility = Visibility.Visible;
+        theme.RefreshInteractiveButton(lookupBtn);
+    }
+
+    public static void TryOpenTrackLookup(RadioStateSnapshot snapshot, ISettingsService settings)
+    {
+        var serviceId = settings.GetOption(RadioOptions.TrackLookupService, MusicLookupHelper.SpotifyId);
+        var url = MusicLookupHelper.BuildSearchUrl(serviceId, snapshot.NowPlaying);
+        if (string.IsNullOrEmpty(url))
+        {
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch
+        {
+            // Ignore shell launch errors on systems without an associated browser handler.
+        }
     }
 }
 

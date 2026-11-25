@@ -50,14 +50,13 @@ public sealed partial class HotkeyService : IHotkeyService
 
     private readonly Win32MessageHost _messageHost;
     private readonly ConcurrentDictionary<string, HotkeyBinding> _bindings = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Guid _handlerId;
+    private Guid? _handlerId;
     private int _nextAtomId = 0x2000;
     private bool _disposed;
 
     public HotkeyService(Win32MessageHost messageHost)
     {
         _messageHost = messageHost;
-        _handlerId = _messageHost.AddMessageHandler(OnWin32Message);
     }
 
     public static string FormatDisplayText(HotkeyModifiers modifiers, uint virtualKey)
@@ -143,7 +142,13 @@ public sealed partial class HotkeyService : IHotkeyService
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
         ArgumentNullException.ThrowIfNull(callback);
 
-        if (_disposed || !OperatingSystem.IsWindows() || _messageHost.Handle == IntPtr.Zero)
+        if (_disposed || !OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+
+        _handlerId ??= _messageHost.AddMessageHandler(OnWin32Message);
+        if (_messageHost.Handle == IntPtr.Zero)
         {
             return false;
         }
@@ -234,7 +239,11 @@ public sealed partial class HotkeyService : IHotkeyService
 
         UnregisterAll();
         _disposed = true;
-        _messageHost.RemoveMessageHandler(_handlerId);
+        if (_handlerId is { } id)
+        {
+            _messageHost.RemoveMessageHandler(id);
+            _handlerId = null;
+        }
     }
 
     [LibraryImport("user32.dll")]

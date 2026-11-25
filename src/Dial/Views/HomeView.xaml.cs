@@ -425,7 +425,7 @@ public sealed partial class HomeView : UserControl
         for (var i = 0; i < stations.Count; i++)
         {
             var station = stations[i];
-            var displayName = showNumbers ? $"{i + 1:00}. {station.Name}" : station.Name;
+            var displayName = OnAirBadgeVisuals.FormatStationDisplayName(station, i, showNumbers);
 
             var accentPill = new Border
             {
@@ -725,7 +725,7 @@ public sealed partial class HomeView : UserControl
         for (var i = 0; i < stations.Count; i++)
         {
             var station = stations[i];
-            var displayName = showNumbers ? $"{i + 1:00}. {station.Name}" : station.Name;
+            var displayName = OnAirBadgeVisuals.FormatStationDisplayName(station, i, showNumbers);
 
             var accentPill = new Border
             {
@@ -1059,15 +1059,14 @@ public sealed partial class HomeView : UserControl
         UpdateTrackLookupButton(snapshot);
         UpdateSleepTimerUi(_sleepTimer.IsActive ? _sleepTimer.Remaining : null);
 
-        PlayPauseGlyph.Glyph = isLiveOrBuffering ? "\uE769" : "\uE768";
-        var playPauseLabel = isLiveOrBuffering ? _localization["Radio.Stop"] : _localization["Radio.Play"];
-        AutomationProperties.SetName(PlayPauseBtn, playPauseLabel);
-        ToolTipService.SetToolTip(PlayPauseBtn, playPauseLabel);
-
-        MuteGlyph.Glyph = snapshot.IsMuted ? "\uE74F" : "\uE767";
-        var muteLabel = snapshot.IsMuted ? _localization["Radio.Unmute"] : _localization["Radio.Mute"];
-        AutomationProperties.SetName(MuteBtn, muteLabel);
-        ToolTipService.SetToolTip(MuteBtn, muteLabel);
+        OnAirBadgeVisuals.ApplyTransportButtonState(
+            PlayPauseGlyph,
+            PlayPauseBtn,
+            MuteGlyph,
+            MuteBtn,
+            isLiveOrBuffering,
+            snapshot.IsMuted,
+            _localization);
         _lastRenderedMuted = snapshot.IsMuted;
 
         EditModeGlyph.Glyph = _isEditMode ? "\uE711" : "\uE70F";
@@ -1248,7 +1247,7 @@ public sealed partial class HomeView : UserControl
 
         if (snapshot.State == RadioPlaybackState.Playing && sessionElapsed > TimeSpan.Zero)
         {
-            parts.Add(_localization.GetString("Radio.SessionTime", FormatDuration(sessionElapsed)));
+            parts.Add(_localization.GetString("Radio.SessionTime", OnAirBadgeVisuals.FormatDuration(sessionElapsed)));
         }
 
         HeroMetaText.Text = string.Join("  •  ", parts);
@@ -1265,7 +1264,7 @@ public sealed partial class HomeView : UserControl
             SleepStatusPill.Background = _theme.GetAdaptiveAccentTintBrush();
             SleepStatusIcon.Foreground = accent;
             SleepStatusText.Foreground = accent;
-            SleepStatusText.Text = FormatDuration(remaining.Value);
+            SleepStatusText.Text = OnAirBadgeVisuals.FormatDuration(remaining.Value);
             SleepFlyoutCancelBtn.Visibility = Visibility.Visible;
         }
         else
@@ -1276,11 +1275,6 @@ public sealed partial class HomeView : UserControl
 
         _theme.RefreshInteractiveButton(SleepTimerBtn);
     }
-
-    private static string FormatDuration(TimeSpan ts)
-        => ts.TotalHours >= 1
-            ? $"{(int)ts.TotalHours}:{ts.Minutes:00}:{ts.Seconds:00}"
-            : $"{ts.Minutes}:{ts.Seconds:00}";
 
     private void OnHomeSizeChanged(object sender, SizeChangedEventArgs e)
     {
@@ -1375,8 +1369,8 @@ public sealed partial class HomeView : UserControl
 
         var nameBox = new TextBox { PlaceholderText = _localization["Radio.Edit.NamePlaceholder"] };
         var urlBox = new TextBox { PlaceholderText = _localization["Radio.Edit.UrlPlaceholder"] };
-        var countryBox = new TextBox { PlaceholderText = "NL", MaxLength = 4 };
-        var tagsBox = new TextBox { PlaceholderText = "rock, indie" };
+        var countryBox = new TextBox { PlaceholderText = _localization["Radio.Edit.CountryPlaceholder"], MaxLength = 4 };
+        var tagsBox = new TextBox { PlaceholderText = _localization["Radio.Edit.TagsPlaceholder"] };
         var errorText = new TextBlock
         {
             Foreground = _theme.GetCriticalBrush(),
@@ -1503,45 +1497,10 @@ public sealed partial class HomeView : UserControl
         => await _player.NextStationAsync();
 
     private void UpdateTrackLookupButton(RadioStateSnapshot snapshot)
-    {
-        var enabled = _settings.GetOption(RadioOptions.TrackLookupEnabled, true);
-        var hasTrack = snapshot.State != RadioPlaybackState.Error && !string.IsNullOrWhiteSpace(snapshot.NowPlaying);
-
-        if (!enabled || !hasTrack)
-        {
-            OpenTrackLookupBtn.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        var serviceId = _settings.GetOption(RadioOptions.TrackLookupService, MusicLookupHelper.SpotifyId);
-        var serviceName = MusicLookupHelper.GetDisplayName(serviceId);
-        var tooltip = _localization.GetString("Radio.TrackLookup.Tooltip", snapshot.NowPlaying!, serviceName);
-
-        OpenTrackLookupLabel.Text = serviceName;
-        AutomationProperties.SetName(OpenTrackLookupBtn, tooltip);
-        ToolTipService.SetToolTip(OpenTrackLookupBtn, tooltip);
-        OpenTrackLookupBtn.Visibility = Visibility.Visible;
-        _theme.RefreshInteractiveButton(OpenTrackLookupBtn);
-    }
+        => OnAirBadgeVisuals.UpdateTrackLookupButton(OpenTrackLookupBtn, OpenTrackLookupLabel, snapshot, _settings, _localization, _theme);
 
     private void OpenTrackLookupBtn_Click(object sender, RoutedEventArgs e)
-    {
-        var serviceId = _settings.GetOption(RadioOptions.TrackLookupService, MusicLookupHelper.SpotifyId);
-        var url = MusicLookupHelper.BuildSearchUrl(serviceId, _player.Current.NowPlaying);
-        if (string.IsNullOrEmpty(url))
-        {
-            return;
-        }
-
-        try
-        {
-            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-        }
-        catch
-        {
-            // Ignore shell launch errors on systems without an associated browser handler.
-        }
-    }
+        => OnAirBadgeVisuals.TryOpenTrackLookup(_player.Current, _settings);
 
     private void MuteBtn_Click(object sender, RoutedEventArgs e)
         => _player.ToggleMute();
@@ -2202,7 +2161,7 @@ public sealed partial class HomeView : UserControl
             };
             var timeBlock = new TextBlock
             {
-                Text = FormatDuration(TimeSpan.FromSeconds(stat.TotalSeconds)),
+                Text = OnAirBadgeVisuals.FormatDuration(TimeSpan.FromSeconds(stat.TotalSeconds)),
                 FontSize = 12,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = _theme.GetTextSecondaryBrush()
@@ -2215,7 +2174,7 @@ public sealed partial class HomeView : UserControl
             StatsListPanel.Children.Add(row);
         }
 
-        StatsTotalText.Text = _localization.GetString("Radio.Stats.Total", FormatDuration(TimeSpan.FromSeconds(totalSeconds)));
+        StatsTotalText.Text = _localization.GetString("Radio.Stats.Total", OnAirBadgeVisuals.FormatDuration(TimeSpan.FromSeconds(totalSeconds)));
     }
 
     private void MiniPlayerBtn_Click(object sender, RoutedEventArgs e)

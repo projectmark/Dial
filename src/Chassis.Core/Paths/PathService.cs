@@ -70,6 +70,5 @@ public sealed class PathService : IPathService
         Directory.CreateDirectory(ExportsDirectory);
         Directory.CreateDirectory(LogsDirectory);
         Directory.CreateDirectory(FeedbackDirectory);
-        Directory.CreateDirectory(PendingUpdatesDirectory);
     }
 }

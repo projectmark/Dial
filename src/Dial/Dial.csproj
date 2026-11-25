@@ -18,6 +18,7 @@
     <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
     <PublishReadyToRun>false</PublishReadyToRun>
     <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
+    <SatelliteResourceLanguages>nl-NL;en-US</SatelliteResourceLanguages>
     <Deterministic>true</Deterministic>
     <RootNamespace>Dial</RootNamespace>
     <AssemblyName>Dial</AssemblyName>

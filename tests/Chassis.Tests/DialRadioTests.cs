@@ -364,67 +364,6 @@ public sealed class DialRadioTests : IDisposable
     }
 
     [Fact]
-    public async Task BufferedStreamProxy_DemuxesIcyAndServesCleanHttpOverLoopback()
-    {
-        const int metaInterval = 32;
-        var audioPart1 = Enumerable.Repeat((byte)'A', 32).ToArray();
-        var audioPart2 = Enumerable.Repeat((byte)'B', 32).ToArray();
-        var metaBytes = new byte[32];
-        Encoding.UTF8.GetBytes("StreamTitle='KINK - Test Track';").CopyTo(metaBytes, 0);
-
-        var rawStreamBytes = new MemoryStream();
-        rawStreamBytes.Write(audioPart1);
-        rawStreamBytes.WriteByte(2); // 2 * 16 = 32 metadata bytes
-        rawStreamBytes.Write(metaBytes);
-        rawStreamBytes.Write(audioPart2);
-        var payloadBytes = rawStreamBytes.ToArray();
-
-        using var fakeUpstreamClient = new HttpClient(new StubStreamHandler(payloadBytes, metaInterval));
-        using var proxy = new BufferedStreamProxy("https://radio.example.invalid/stream.mp3", 10, fakeUpstreamClient);
-
-        string? receivedTitle = null;
-        proxy.NowPlayingChanged += t => receivedTitle = t;
-
-        var result = await proxy.StartAsync();
-        Assert.Equal(BufferedProxyStartStatus.Started, result.Status);
-        Assert.NotNull(result.LocalUri);
-        Assert.Equal("127.0.0.1", result.LocalUri!.Host);
-
-        using var playerClient = new HttpClient();
-
-        // HEAD probe must succeed without draining any buffered audio bytes
-        using var headResp = await playerClient.SendAsync(new HttpRequestMessage(HttpMethod.Head, result.LocalUri));
-        Assert.Equal(HttpStatusCode.OK, headResp.StatusCode);
-
-        // GET stream receives exact clean audio frames stripped of ICY metadata
-        var streamedAudio = await playerClient.GetByteArrayAsync(result.LocalUri);
-        Assert.Equal(audioPart1.Concat(audioPart2).ToArray(), streamedAudio);
-        Assert.Equal("KINK - Test Track", receivedTitle);
-    }
-
-    private sealed class StubStreamHandler(byte[] payload, int metaInterval) : HttpMessageHandler
-    {
-        private int _calls;
-
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            if (Interlocked.Increment(ref _calls) > 1)
-            {
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Gone));
-            }
-
-            var resp = new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new ByteArrayContent(payload)
-            };
-            resp.Content.Headers.TryAddWithoutValidation("Content-Type", "audio/mpeg");
-            resp.Headers.TryAddWithoutValidation("icy-br", "192");
-            resp.Headers.TryAddWithoutValidation("icy-metaint", metaInterval.ToString());
-            return Task.FromResult(resp);
-        }
-    }
-
-    [Fact]
     public void AudioFrameParser_SkipsId3v2AndExtractsCompleteMp3AndAdtsFrames()
     {
         // ID3v2 header ("ID3", v2.3, flags 0, syncsafe size 12) + 12 bytes ID3 body = 22 bytes total
