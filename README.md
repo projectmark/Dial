@@ -30,7 +30,7 @@
 
 [![Download Latest Release](https://img.shields.io/badge/DOWNLOAD-LATEST%20RELEASE-6CC644?style=for-the-badge&labelColor=555555)](https://github.com/projectmark/Dial/releases)
 
-- **Directe download (`v0.1.4-alpha` portable `.zip`):** [`Dial-v0.1.4-alpha-win-x64.zip`](https://github.com/projectmark/Dial/releases/download/v0.1.4-alpha/Dial-v0.1.4-alpha-win-x64.zip)
+- **Directe download (`v0.1.5-alpha` portable `.zip`):** [`Dial-v0.1.5-alpha-win-x64.zip`](https://github.com/projectmark/Dial/releases/download/v0.1.5-alpha/Dial-v0.1.5-alpha-win-x64.zip)
 - **Installatie:** Pak het volledige `.zip`-archief uit naar een map naar keuze en start **`Dial.exe`** (er zijn geen extra runtimes of installaties nodig).
 
 ---

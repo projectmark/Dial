@@ -264,11 +264,12 @@ public sealed partial class App : Application
         var changelog = Services.GetRequiredService<IChangelogService>();
         changelog.RegisterRelease(new ChangelogRelease(
             Version: AppVersion.InformationalVersion,
-            ReleaseDate: new DateTime(2026, 11, 24),
+            ReleaseDate: new DateTime(2026, 11, 25),
             Changes: new ChangelogChange[]
             {
-                new ChangelogChange("Changed", "Changelog.v014Alpha.ChangedLooseFilePortableBuild"),
-                new ChangelogChange("Changed", "Changelog.v014Alpha.ChangedSaferZipUpdater")
+                new ChangelogChange("Changed", "Changelog.v015Alpha.ChangedLooseFilePortableBuild"),
+                new ChangelogChange("Changed", "Changelog.v015Alpha.ChangedSaferZipUpdater"),
+                new ChangelogChange("Added", "Changelog.v015Alpha.AddedGplLicenseAndReadme")
             },
             IsLatest: true));
 
