@@ -7,9 +7,9 @@
   <p><strong>Lichtgewicht, modulaire Windows 10 & 11 internetradio-desktopapp gebouwd met WinUI 3, .NET 10 en Microsoft Fluent 2</strong></p>
 
   <p>
-    <a href="https://github.com/projectmark/Dial/releases"><img src="https://img.shields.io/github/v/release/projectmark/Dial?include_prereleases&logo=github&label=version&color=1f6feb" alt="Version" /></a>
-    <a href="https://github.com/projectmark/Dial/commits/master"><img src="https://img.shields.io/github/last-commit/projectmark/Dial?logo=github&label=updated&color=6a9955" alt="Last Updated" /></a>
-    <a href="https://github.com/projectmark/Dial/releases"><img src="https://img.shields.io/github/downloads/projectmark/Dial/total?label=downloads&color=4c1" alt="Downloads" /></a>
+    <a href="https://github.com/projectmark/Dial/releases"><img src="https://img.shields.io/github/v/release/projectmark/Dial?include_prereleases&style=flat&logo=github&label=version&color=1f6feb" alt="Version" /></a>
+    <a href="https://github.com/projectmark/Dial/commits/master"><img src="https://img.shields.io/github/last-commit/projectmark/Dial?style=flat&logo=github&label=updated&color=6a9955" alt="Last Updated" /></a>
+    <a href="https://github.com/projectmark/Dial/releases"><img src="https://img.shields.io/github/downloads/projectmark/Dial/total?style=flat&label=downloads&color=4c1" alt="Downloads" /></a>
   </p>
   <p>
     <img src="https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D4?logo=windows11&logoColor=white" alt="Platform Windows 10 | 11" />
@@ -18,8 +18,8 @@
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPLv3-blue?logo=gnu&logoColor=white" alt="License GPLv3" /></a>
   </p>
   <p>
-    <a href="https://github.com/projectmark/Dial/stargazers"><img src="https://img.shields.io/github/stars/projectmark/Dial?logo=github&label=stars&color=1f6feb" alt="Stars" /></a>
-    <a href="https://github.com/projectmark/Dial/graphs/contributors"><img src="https://img.shields.io/github/contributors/projectmark/Dial?logo=github&label=contributors&color=c9510c" alt="Contributors" /></a>
+    <a href="https://github.com/projectmark/Dial/stargazers"><img src="https://img.shields.io/github/stars/projectmark/Dial?style=flat&logo=github&label=stars&color=1f6feb" alt="Stars" /></a>
+    <a href="https://github.com/projectmark/Dial/graphs/contributors"><img src="https://img.shields.io/github/contributors/projectmark/Dial?style=flat&logo=github&label=contributors&color=c9510c" alt="Contributors" /></a>
   </p>
 
 </div>
