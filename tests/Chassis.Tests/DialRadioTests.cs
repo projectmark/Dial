@@ -726,15 +726,29 @@ public sealed class DialRadioTests : IDisposable
     }
 
     [Fact]
-    public void DialCatchphrases_ProvidesAllFiveAndFormatsLiveTitleBarStatus()
+    public void DialCatchphrases_ProvidesAllSixWithHalfFrequencyForRarePhraseAndFormatsLiveTitleBarStatus()
     {
-        Assert.Equal(5, DialCatchphrases.All.Count);
+        Assert.Equal(6, DialCatchphrases.All.Count);
         Assert.Contains("Dialed in on every station.", DialCatchphrases.All);
         Assert.Contains("Live radio, dialed in.", DialCatchphrases.All);
         Assert.Contains("From airwaves to streams, dialed in.", DialCatchphrases.All);
         Assert.Contains("Every broadcast, dialed in.", DialCatchphrases.All);
         Assert.Contains("Always dialed in.", DialCatchphrases.All);
+        Assert.Contains(DialCatchphrases.RareVibesCatchphrase, DialCatchphrases.All);
         Assert.Contains(DialCatchphrases.PickRandom(new Random(42)), DialCatchphrases.All);
+
+        var rotation = DialCatchphrases.WeightedRotation;
+        Assert.Equal(11, rotation.Count);
+        Assert.Equal(1, rotation.Count(p => p == DialCatchphrases.RareVibesCatchphrase));
+        foreach (var phrase in DialCatchphrases.All.Where(p => p != DialCatchphrases.RareVibesCatchphrase))
+        {
+            Assert.Equal(2, rotation.Count(p => p == phrase));
+        }
+
+        for (var i = 0; i < rotation.Count; i++)
+        {
+            Assert.NotEqual(rotation[i], rotation[(i + 1) % rotation.Count]);
+        }
 
         var kink = KinkStationCatalog.DefaultStations[0];
         Assert.Null(DialCatchphrases.FormatLiveTitleBarStatus(new RadioStateSnapshot(kink, RadioPlaybackState.Stopped, "Track", 0.8, false, null)));

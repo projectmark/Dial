@@ -115,7 +115,7 @@ public sealed partial class MainWindow : Window
                 _localization["TitleBar.VersionTooltip"]);
             TitleBarControl.SetFeedbackEnabled(false);
             TitleBarControl.SetLogoImage(titleLogoPath);
-            var catchphrases = DialCatchphrases.All;
+            var catchphrases = DialCatchphrases.WeightedRotation;
             var catchphraseIndex = Random.Shared.Next(catchphrases.Count);
             TitleBarControl.SetSubtitle(
                 catchphrases[catchphraseIndex],

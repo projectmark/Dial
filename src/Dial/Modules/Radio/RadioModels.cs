@@ -102,7 +102,9 @@ public static class MusicLookupHelper
 /// </summary>
 public static class DialCatchphrases
 {
-    public static IReadOnlyList<string> All { get; } = (string[])
+    public const string RareVibesCatchphrase = "100% Vibes, 100% Radio, 100% Dialed in!";
+
+    private static readonly string[] StandardCatchphrases =
     [
         "Dialed in on every station.",
         "Live radio, dialed in.",
@@ -111,10 +113,20 @@ public static class DialCatchphrases
         "Always dialed in."
     ];
 
+    public static IReadOnlyList<string> All { get; } =
+        (string[])[.. StandardCatchphrases, RareVibesCatchphrase];
+
+    /// <summary>
+    /// Weighted rotation where each standard catchphrase appears twice and <see cref="RareVibesCatchphrase"/>
+    /// appears once (half as often), arranged with no consecutive repeats even across wrap-around.
+    /// </summary>
+    public static IReadOnlyList<string> WeightedRotation { get; } =
+        (string[])[.. StandardCatchphrases, RareVibesCatchphrase, .. StandardCatchphrases];
+
     public static string PickRandom(Random? random = null)
     {
         var rng = random ?? Random.Shared;
-        return All[rng.Next(All.Count)];
+        return WeightedRotation[rng.Next(WeightedRotation.Count)];
     }
 
     public static string? FormatLiveTitleBarStatus(RadioStateSnapshot snapshot)
